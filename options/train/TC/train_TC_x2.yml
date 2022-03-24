@@ -1,6 +1,6 @@
 # TODO
 # general settings
-name: 001_RCAN_X2_f64g10b20_DIV2K_rand0
+name: 001_TC_X2_f64g10b20_DIV2K_rand0
 model_type: SRModel
 scale: 2
 num_gpu: 1  # set num_gpu: 0 for cpu mode
@@ -34,16 +34,16 @@ datasets:
     prefetch_mode: ~
 
   val:
-    name: BSDS200
+    name: Set5
     type: PairedImageDataset
-    dataroot_gt: datasets/benchmark/BSDS200/HR
-    dataroot_lq: datasets/benchmark/BSDS200/LR_bicubic/X2
+    dataroot_gt: datasets/benchmark/Set5/HR
+    dataroot_lq: datasets/benchmark/Set5/LR_bicubic/X2
     io_backend:
       type: disk
 
 # network structures
 network_g:
-  type: RCAN
+  type: TC
   num_in_ch: 3
   num_out_ch: 3
   num_feat: 64
@@ -57,7 +57,7 @@ network_g:
 
 # path
 path:
-  pretrain_network_g: experiments/pretrained_models/RCAN/RCAN_BIX2.pth
+  pretrain_network_g: ~
   strict_load_g: true
   resume_state: ~
 
@@ -86,13 +86,13 @@ train:
 
 # validation settings
 val:
-  val_freq: !!float 2e3
+  val_freq: !!float 1e2
   save_img: true
 
   metrics:
     psnr: # metric name, can be arbitrary
       type: calculate_psnr
-      crop_border: 4
+      crop_border: 0
       test_y_channel: false
 
 # logging settings

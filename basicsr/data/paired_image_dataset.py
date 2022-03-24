@@ -6,6 +6,22 @@ from basicsr.data.transforms import augment, paired_random_crop
 from basicsr.utils import FileClient, imfrombytes, img2tensor
 from basicsr.utils.matlab_functions import rgb2ycbcr
 from basicsr.utils.registry import DATASET_REGISTRY
+import numpy as np
+
+
+def modcrop(img, scale):
+    # img_in: Numpy, HWC or HW
+    if img.ndim == 2:
+        H, W = img.shape
+        H_r, W_r = H % scale, W % scale
+        img = img[:H - H_r, :W - W_r]
+    elif img.ndim == 3:
+        H, W, C = img.shape
+        H_r, W_r = H % scale, W % scale
+        img = img[:H - H_r, :W - W_r, :]
+    else:
+        raise ValueError('Wrong img ndim: [{:d}].'.format(img.ndim))
+    return np.float32(img)
 
 
 @DATASET_REGISTRY.register()
@@ -77,6 +93,8 @@ class PairedImageDataset(data.Dataset):
         lq_path = self.paths[index]['lq_path']
         img_bytes = self.file_client.get(lq_path, 'lq')
         img_lq = imfrombytes(img_bytes, float32=True)
+        img_gt = modcrop(img_gt, 8)
+        img_lq = modcrop(img_lq, 8)
 
         # augmentation for training
         if self.opt['phase'] == 'train':
