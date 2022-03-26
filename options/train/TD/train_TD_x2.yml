@@ -1,6 +1,6 @@
 # TODO
 # general settings
-name: 001_TC_X2_f64g10b20_DIV2K_rand0
+name: 001_TD_X2_f64g10b20_DIV2K_rand0
 model_type: SRModel
 scale: 2
 num_gpu: 1  # set num_gpu: 0 for cpu mode
@@ -29,8 +29,8 @@ datasets:
     # data loader
     use_shuffle: true
     num_worker_per_gpu: 6
-    batch_size_per_gpu: 8
-    dataset_enlarge_ratio: 8
+    batch_size_per_gpu: 16
+    dataset_enlarge_ratio: 10
     prefetch_mode: ~
 
   val:
@@ -43,7 +43,7 @@ datasets:
 
 # network structures
 network_g:
-  type: TC
+  type: TD
   num_in_ch: 3
   num_out_ch: 3
   num_feat: 64
@@ -86,7 +86,7 @@ train:
 
 # validation settings
 val:
-  val_freq: !!float 5e3
+  val_freq: !!float 1e2
   save_img: true
 
   metrics:
