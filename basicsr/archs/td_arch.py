@@ -1,28 +1,47 @@
 import torch
 from torch import nn as nn
+import math
 
 from basicsr.utils.registry import ARCH_REGISTRY
-from .arch_util import Upsample, make_layer
 
 
-class ResidualBlock(nn.Module):
+class Upsample(nn.Sequential):
+    """Upsample module.
 
-    def __init__(self, in_channels, out_channels):
-        super(ResidualBlock, self).__init__()
+    Args:
+        scale (int): Scale factor. Supported scales: 2^n and 3.
+        num_feat (int): Channel number of intermediate features.
+    """
+
+    def __init__(self, scale, num_feat):
+        m = []
+        if (scale & (scale - 1)) == 0:  # scale = 2^n
+            for _ in range(int(math.log(scale, 2))):
+                m.append(nn.Conv2d(num_feat, 4 * num_feat, 3, 1, 1))
+                m.append(nn.PixelShuffle(2))
+        elif scale == 3:
+            m.append(nn.Conv2d(num_feat, 9 * num_feat, 3, 1, 1))
+            m.append(nn.PixelShuffle(3))
+        else:
+            raise ValueError(f'scale {scale} is not supported. Supported scales: 2^n and 3.')
+        super(Upsample, self).__init__(*m)
+
+
+class TDB_Residual(nn.Module):
+
+    def __init__(self, num_feat, k_size=3):
+        super(TDB_Residual, self).__init__()
 
         self.body = nn.Sequential(
-            nn.Conv2d(in_channels, out_channels, 3, 1, 1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(out_channels, out_channels, 3, 1, 1),
-            nn.ReLU(inplace=True),
-        )
+            nn.Conv2d(num_feat, num_feat, k_size, padding=(k_size - 1) // 2, stride=1), nn.ReLU(inplace=True),
+            nn.Conv2d(num_feat, num_feat, k_size, padding=(k_size - 1) // 2, stride=1), nn.ReLU(inplace=True))
 
     def forward(self, x):
         out = self.body(x)
-        return out + x
+        return torch.cat([x, out + x], 1)
 
 
-class ChannelAttention(nn.Module):
+class CALayer(nn.Module):
     """Channel attention used in RCAN.
 
     Args:
@@ -31,7 +50,7 @@ class ChannelAttention(nn.Module):
     """
 
     def __init__(self, num_feat, squeeze_factor=16):
-        super(ChannelAttention, self).__init__()
+        super(CALayer, self).__init__()
         self.attention = nn.Sequential(
             nn.AdaptiveAvgPool2d(1), nn.Conv2d(num_feat, num_feat // squeeze_factor, 1, padding=0),
             nn.ReLU(inplace=True), nn.Conv2d(num_feat // squeeze_factor, num_feat, 1, padding=0), nn.Sigmoid())
@@ -41,80 +60,87 @@ class ChannelAttention(nn.Module):
         return x * y
 
 
-class TDBlock(nn.Module):
+class TDB(nn.Module):
 
-    def __init__(self, channels, kSize=3):
-        super(TDBlock, self).__init__()
-        self.r1 = ResidualBlock(channels, channels)
-        self.r2 = ResidualBlock(channels * 2, channels * 2)
-        self.r3 = ResidualBlock(channels * 4, channels * 4)
-        self.g = nn.Conv2d(channels * 8, channels, 3, 1, 1, 1)
-        self.ca = ChannelAttention(channels)
-
-    def forward(self, x):
-        r1 = self.r1(x)
-
-        c1 = torch.cat([x, r1], dim=1)
-        r2 = self.r2(c1)
-
-        c2 = torch.cat([c1, r2], dim=1)
-        r3 = self.r3(c2)
-
-        g = self.g(torch.cat([c2, r3], dim=1))
-        out = self.ca(g)
-        return out + x
-
-
-class TDGROUP(nn.Module):
-
-    def __init__(self, channels, kSize=3):
-        super(TDGROUP, self).__init__()
-        self.b1 = TDBlock(channels)
-        self.b2 = TDBlock(channels)
-        self.b3 = TDBlock(channels)
-
-        self.g1 = nn.Conv2d(channels * 2, channels, 3, 1, 1, 1)
-        self.g2 = nn.Conv2d(channels * 2, channels, 3, 1, 1, 1)
-        self.g3 = nn.Conv2d(channels * 2, channels, 3, 1, 1, 1)
+    def __init__(self, num_feat, n_res, squeeze_factor=16):
+        super(TDB, self).__init__()
+        self.body = nn.Sequential(*[TDB_Residual(num_feat * 2**i) for i in range(n_res)])
+        self.llf = nn.Conv2d(num_feat * 2**n_res, num_feat, 1, padding=0, stride=1)
+        self.ca = CALayer(num_feat, squeeze_factor)
+        self.g = nn.Sequential(nn.Conv2d(num_feat * 2, num_feat, 1, padding=0, stride=1))
 
     def forward(self, x):
-        b1 = self.b1(x)
-
-        b2 = self.b2(self.g1(torch.cat([x, b1], dim=1)))
-
-        b3 = self.b3(self.g2(torch.cat([b1, b2], dim=1)))
-
-        out = self.g3(torch.cat([b2, b3], dim=1))
-        return out + x
+        out = self.body(x)
+        out = self.llf(out)
+        out = self.ca(out)
+        return self.g(torch.cat([x, out + x], 1))
 
 
-class UAttention(nn.Module):
+class TDG(nn.Module):
 
-    def __init__(self, num_feat):
-        super(UAttention, self).__init__()
+    def __init__(self, num_feat, n_res, n_block, squeeze_factor=16):
+        super(TDG, self).__init__()
+        self.body = nn.Sequential(*[TDB(num_feat, n_res, squeeze_factor) for i in range(n_block)])
 
-        self.ua1 = nn.Sequential(
+    def forward(self, x):
+        return self.body(x) + x
+
+
+class UAD(nn.Sequential):
+
+    def __init__(self, num_feat, step, k_size=3):
+        c = num_feat * 2**step
+        m = [
+            nn.MaxPool2d(2, 2),
+            nn.Conv2d(c, c * 2, kernel_size=1, padding=0, stride=1),
+            nn.ReLU(inplace=True),
+            nn.Conv2d(c * 2, c * 2, k_size, padding=(k_size - 1) // 2, stride=1),
+            nn.ReLU(inplace=True)
+        ]
+        super(UAD, self).__init__(*m)
+
+
+class UAU(nn.Sequential):
+
+    def __init__(self, num_feat, step, k_size=3):
+        c = num_feat * 2**step
+        m = [
+            nn.Conv2d(c * 3, c, kernel_size=1, padding=0, stride=1),
+            nn.Conv2d(c, c, k_size, padding=(k_size - 1) // 2, stride=1),
+            nn.ReLU(inplace=True)
+        ]
+        super(UAU, self).__init__(*m)
+
+
+class UALayer(nn.Module):
+
+    def __init__(self, num_feat, n_step=3):
+        super(UALayer, self).__init__()
+
+        self.n_step = n_step
+        self.head = nn.Sequential(
             nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.ReLU(True), nn.Conv2d(num_feat, num_feat, 3, 1, 1))
-        self.ua2 = nn.Sequential(
-            nn.MaxPool2d(2, 2), nn.Conv2d(num_feat, num_feat * 2, 3, 1, 1), nn.ReLU(True),
-            nn.Conv2d(num_feat * 2, num_feat * 2, 3, 1, 1), nn.ReLU(True))
-        self.ua3 = nn.Sequential(
-            nn.MaxPool2d(2, 2), nn.Conv2d(num_feat * 2, num_feat * 4, 3, 1, 1), nn.ReLU(True),
-            nn.Conv2d(num_feat * 4, num_feat * 4, 3, 1, 1), nn.ReLU(True),
-            nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False))
-        self.ua4 = nn.Sequential(
-            nn.Conv2d(num_feat * 6, num_feat * 2, 3, 1, 1), nn.Conv2d(num_feat * 2, num_feat * 2, 3, 1, 1),
-            nn.ReLU(True), nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False))
-        self.ua5 = nn.Sequential(
-            nn.Conv2d(num_feat * 3, num_feat, 3, 1, 1), nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.Sigmoid())
+        self.uad = nn.ModuleList()
+        self.us = nn.ModuleList()
+        self.uau = nn.ModuleList()
+        for i in range(n_step):
+            self.uad.append(UAD(num_feat, i))
+            self.us.append(nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False))
+            self.uau.append(UAU(num_feat, i))
+        self.tail = nn.Sequential(nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.Sigmoid())
 
     def forward(self, x):
-        res1 = self.ua1(x)
-        res2 = self.ua2(res1)
-        res = self.ua3(res2)
-        res = self.ua4(torch.cat([res2, res], dim=1))
-        res = self.ua5(torch.cat([res1, res], dim=1))
-        return res * x
+        out = self.head(x)
+
+        res = [out]
+        for i in range(self.n_step - 1):
+            out = self.uad[i](out)
+            res.append(out)
+        out = self.uad[self.n_step - 1](out)
+        for i in range(self.n_step)[::-1]:
+            out = self.us[i](out)
+            out = self.uau[i](torch.cat([out, res[i]], 1))
+        return out * x
 
 
 @ARCH_REGISTRY.register()
@@ -146,44 +172,52 @@ class TD(nn.Module):
                  num_in_ch,
                  num_out_ch,
                  num_feat=64,
-                 num_group=10,
-                 num_block=16,
+                 num_dis=3,
+                 num_group=2,
+                 num_block=3,
+                 num_res=3,
                  squeeze_factor=16,
-                 upscale=4,
+                 ua_step=3,
+                 upscale=2,
                  res_scale=1,
                  img_range=255.,
                  rgb_mean=(0.4488, 0.4371, 0.4040)):
         super(TD, self).__init__()
 
+        self.num_dis = num_dis
         self.img_range = img_range
         self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
 
-        self.conv_first = nn.Conv2d(num_in_ch, num_feat, 3, 1, 1)
+        self.head = nn.Conv2d(num_in_ch, num_feat, 3, 1, 1)
+        self.sfe = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
 
-        self.g1 = nn.Sequential(TDGROUP(num_feat), TDGROUP(num_feat))
-        self.g2 = nn.Sequential(TDGROUP(num_feat), TDGROUP(num_feat))
-        self.g3 = nn.Sequential(TDGROUP(num_feat), TDGROUP(num_feat))
+        self.dis = nn.ModuleList()
+        for i in range(num_dis):
+            self.dis.append(
+                nn.Sequential(*[TDG(num_feat, num_res, num_block, squeeze_factor) for i in range(num_group)]))
 
+        self.ua = UALayer(num_feat * 3, ua_step)
         self.conv_after_body = nn.Conv2d(num_feat * 3, num_feat * 3, 3, 1, 1)
         self.upsample = Upsample(upscale, num_feat * 3)
-        self.conv_last = nn.Conv2d(num_feat * 3, num_out_ch, 3, 1, 1)
-        self.ua = UAttention(num_feat=num_feat * 3)
+        self.tail = nn.Conv2d(num_feat * 3, num_out_ch, 3, 1, 1)
 
     def forward(self, x):
         self.mean = self.mean.type_as(x)
 
         x = (x - self.mean) * self.img_range
-        x = self.conv_first(x)
+        x = self.head(x)
+        out = self.sfe(x)
 
-        g1 = self.g1(x)
-        g2 = self.g2(g1)
-        res = self.g3(g2)
+        d_out = []
+        for i in range(self.num_dis):
+            out = self.dis[i](out)
+            d_out.append(out)
 
-        res = self.ua(torch.cat([g1, g2, res], 1))
-        res = res + torch.cat([x, x, x], 1)
-        res = self.conv_after_body(res)
+        out = self.ua(torch.cat(d_out, 1))
+        out = out + torch.cat([x, x, x], 1)
+        out = self.conv_after_body(out)
 
-        x = self.conv_last(self.upsample(res))
+        x = self.tail(self.upsample(out))
         x = x / self.img_range + self.mean
 
         return x

@@ -34,10 +34,10 @@ datasets:
     prefetch_mode: ~
 
   val:
-    name: DIV2K_VAL
+    name: Set5
     type: PairedImageDataset
-    dataroot_gt: datasets/benchmark/DIV2K_VAL/HR
-    dataroot_lq: datasets/benchmark/DIV2K_VAL/LR_bicubic/X2
+    dataroot_gt: datasets/benchmark/Set5/HR
+    dataroot_lq: datasets/benchmark/Set5/LR_bicubic/X2
     io_backend:
       type: disk
 
@@ -47,9 +47,12 @@ network_g:
   num_in_ch: 3
   num_out_ch: 3
   num_feat: 64
-  num_group: 10
-  num_block: 20
+  num_dis: 3
+  num_group: 2
+  num_block: 3
+  num_res: 3
   squeeze_factor: 16
+  ua_step: 3
   upscale: 2
   res_scale: 1
   img_range: 255.
