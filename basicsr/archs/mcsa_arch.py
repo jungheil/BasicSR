@@ -14,6 +14,18 @@ class Focus(nn.Module):
         return torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1)
 
 
+class DSConv(nn.Module):
+
+    def __init__(self, in_channels, out_channels, k, s, p):
+        super(DSConv, self).__init__()
+        self.dsc = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, k, s, p, groups=in_channels),
+            nn.Conv2d(in_channels, out_channels, 1, 1, 0, bias=False))
+
+    def forward(self, x):
+        return self.dsc(x)
+
+
 class MCSALayer(nn.Module):
     """Channel attention used in RCAN.
 
@@ -25,8 +37,8 @@ class MCSALayer(nn.Module):
     def __init__(self, num_feat):
         super(MCSALayer, self).__init__()
         self.mcsa = nn.Sequential(
-            nn.Conv2d(num_feat * 4, num_feat * 4, 3, 1, 1), nn.ReLU(inplace=True),
-            nn.Conv2d(num_feat * 4, num_feat * 4, 3, 1, 1), nn.ReLU(inplace=True),
+            DSConv(num_feat * 4, num_feat * 4, 3, 1, 1), nn.ReLU(inplace=True),
+            DSConv(num_feat * 4, num_feat * 4, 3, 1, 1), nn.ReLU(inplace=True),
             nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0), nn.Sigmoid(),
             nn.Upsample(scale_factor=2, mode='bilinear', align_corners=False))
 
