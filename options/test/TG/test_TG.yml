@@ -22,6 +22,30 @@ datasets:
     io_backend:
       type: disk
 
+  test_3:  # the 2nd test dataset
+    name: Urban100
+    type: PairedImageDataset
+    dataroot_gt: datasets/benchmark/Urban100/HR
+    dataroot_lq: datasets/benchmark/Urban100/LR_bicubic/X2
+    io_backend:
+      type: disk
+
+  test_4:  # the 2nd test dataset
+    name: Manga109
+    type: PairedImageDataset
+    dataroot_gt: datasets/benchmark/Manga109/HR
+    dataroot_lq: datasets/benchmark/Manga109/LR_bicubic/X2
+    io_backend:
+      type: disk
+
+  test_5:  # the 2nd test dataset
+    name: BSDS100
+    type: PairedImageDataset
+    dataroot_gt: datasets/benchmark/BSDS100/HR
+    dataroot_lq: datasets/benchmark/BSDS100/LR_bicubic/X2
+    io_backend:
+      type: disk
+
 # network structures
 network_g:
   type: TG
@@ -50,5 +74,5 @@ val:
 
 # path
 path:
-  pretrain_network_g: experiments/pretrained_models/net_g_115000.pth
+  pretrain_network_g: /home/li/fsdownload/net_g_160000.pth
   strict_load_g: true

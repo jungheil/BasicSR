@@ -1,10 +1,10 @@
 # TODO
 # general settings
-name: 001_TH_X2_f64g10b20_DIV2K_rand0
+name: 001_TI_X2_f64g10b20_DIV2K_rand0
 model_type: SRModel
 scale: 2
-num_gpu: 1 # set num_gpu: 0 for cpu mode
-manual_seed: 0
+num_gpu: 1  # set num_gpu: 0 for cpu mode
+manual_seed: 1
 
 # dataset and data loader settings
 datasets:
@@ -16,21 +16,21 @@ datasets:
     # (for lmdb)
     # dataroot_gt: datasets/DIV2K/DIV2K_train_HR_sub.lmdb
     # dataroot_lq: datasets/DIV2K/DIV2K_train_LR_bicubic_X2_sub.lmdb
-    filename_tmpl: "{}"
+    filename_tmpl: '{}'
     io_backend:
       type: disk
       # (for lmdb)
       # type: lmdb
 
-    gt_size: 96
+    gt_size: 48
     use_hflip: true
     use_rot: true
 
     # data loader
     use_shuffle: true
-    num_worker_per_gpu: 8
+    num_worker_per_gpu: 6
     batch_size_per_gpu: 16
-    dataset_enlarge_ratio: 20
+    dataset_enlarge_ratio: 100
     prefetch_mode: ~
 
   val:
@@ -43,14 +43,12 @@ datasets:
 
 # network structures
 network_g:
-  type: TH
+  type: TI
   num_in_ch: 3
   num_out_ch: 3
-  k_size: 7
   num_feat: 64
-  dst_feat: 16
-  num_res: 6
-  num_block: 8
+  num_group: 10
+  num_block: 20
   squeeze_factor: 16
   upscale: 2
   res_scale: 1
@@ -100,7 +98,7 @@ val:
   metrics:
     psnr: # metric name, can be arbitrary
       type: calculate_psnr
-      crop_border: 0
+      crop_border: 4
       test_y_channel: true
 
 # logging settings

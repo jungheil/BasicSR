@@ -92,12 +92,12 @@ class THB(nn.Module):
         self.num_res = num_res
         for i in range(num_res):
             self.thb.append(ResU(num_feat, res_scale=res_scale, k_size=k_size))
-            self.dst.append(DWConv(num_feat, dst_feat))
+            self.dst.append(nn.Conv2d(num_feat, dst_feat, 1, 1, 0, bias=False))
         self.thb = nn.ModuleList(self.thb)
         self.dst = nn.ModuleList(self.dst)
 
         self.att = ChannelAttention(num_feat + (num_res - 1) * dst_feat, squeeze_factor=16)
-        self.cc = nn.Conv2d(num_feat + (num_res - 1) * dst_feat, num_feat, 1, 1, 0)
+        self.cc = nn.Conv2d(num_feat + (num_res - 1) * dst_feat, num_feat, 1, 1, 0, bias=False)
 
     def forward(self, x):
         res = x
@@ -167,7 +167,7 @@ class TH(nn.Module):
         self.upsample = Upsample(upscale, num_feat)
         self.tail = nn.Sequential(
             nn.Conv2d(num_feat, num_feat, k_size, stride=1, padding=(k_size - 1) // 2, groups=num_feat),
-            nn.Conv2d(num_feat, num_out_ch, 1, 1, 0))
+            nn.Conv2d(num_feat, num_out_ch, 1, 1, 0, bias=False))
 
     def forward(self, x):
         self.mean = self.mean.type_as(x)
