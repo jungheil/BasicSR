@@ -3,9 +3,10 @@ from torch import nn as nn
 
 from basicsr.utils.registry import ARCH_REGISTRY
 from .arch_util import Upsample, make_layer
+# from depthwise_conv2d_implicit_gemm import DepthWiseConv2dImplicitGEMM
 
+torch.backends.cudnn.benchmark = True
 
-torch.backends.cudnn.benchmark=True
 
 class UDown(nn.Module):
     """Downscaling with maxpool then double conv"""
@@ -27,7 +28,7 @@ class UUp(nn.Module):
         super().__init__()
 
         # if bilinear, use the normal convolutions to reduce the number of channels
-        self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
+        self.up = nn.Upsample(scale_factor=2, mode='bicubic', align_corners=True)
         self.conv = nn.Sequential(
             nn.Conv2d(in_channels + out_channels, out_channels, 3, 1, 1), nn.ReLU(True),
             nn.Conv2d(out_channels, out_channels, 3, 1, 1), nn.ReLU(True))
@@ -77,7 +78,7 @@ class DSConv(nn.Module):
     def __init__(self, in_channels, out_channels, k_size=7, stride=1, padding=3):
         super(DSConv, self).__init__()
         self.body = nn.Sequential(
-            nn.Conv2d(in_channels, in_channels, k_size, stride=stride, padding=padding, groups=in_channels),
+            nn.Conv2d(in_channels, in_channels, k_size, stride=stride, padding=padding, groups=in_channels, bias=False),
             nn.Conv2d(in_channels, out_channels, 1, 1, 0))
 
     def forward(self, x):
@@ -116,12 +117,16 @@ class RCAB(nn.Module):
         super(RCAB, self).__init__()
         self.res_scale = res_scale
 
-        self.rcab = nn.Sequential(
-            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.2, inplace=True),
-            DSConv(num_feat, num_feat), ChannelAttention(num_feat, squeeze_factor))
+        self.body = nn.Sequential(
+            nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
+            nn.InstanceNorm2d(num_feat, affine=True), nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
+            nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
+        # self.body = nn.Sequential(
+        #     DepthWiseConv2dImplicitGEMM(num_feat, 7), nn.InstanceNorm2d(num_feat, affine=True),
+        #     nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
 
     def forward(self, x):
-        res = self.rcab(x)
+        res = self.body(x)
         return res * self.res_scale + x
 
 
@@ -142,14 +147,13 @@ class ResidualGroup(nn.Module):
             RCAB, num_block, num_feat=num_feat, squeeze_factor=squeeze_factor, res_scale=res_scale)
         self.conv = DSConv(num_feat, num_feat)
 
-    def forward(self, x):
-        x, ua = x
+    def forward(self, x, ua):
         res = self.conv(self.residual_group(x)) * ua
-        return (res + x, ua)
+        return res + x
 
 
 @ARCH_REGISTRY.register()
-class TJ(nn.Module):
+class TK(nn.Module):
     """Residual Channel Attention Networks.
 
     Paper: Image Super-Resolution Using Very Deep Residual Channel Attention
@@ -184,23 +188,21 @@ class TJ(nn.Module):
                  res_scale=1,
                  img_range=255.,
                  rgb_mean=(0.4488, 0.4371, 0.4040)):
-        super(TJ, self).__init__()
+        super(TK, self).__init__()
 
         self.img_range = img_range
         self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
 
         self.conv_first = nn.Conv2d(num_in_ch, num_feat, 3, 1, 1)
-        self.body = make_layer(
-            ResidualGroup,
-            num_group,
-            num_feat=num_feat,
-            num_block=num_block,
-            squeeze_factor=squeeze_factor,
-            res_scale=res_scale)
+        self.bd = nn.ModuleList([
+            ResidualGroup(num_feat=num_feat, num_block=num_block, squeeze_factor=squeeze_factor, res_scale=res_scale)
+            for i in range(num_group)
+        ])
+
         self.conv_after_body = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
         self.upsample = Upsample(upscale, num_feat)
         self.conv_last = DSConv(num_feat, num_out_ch)
-        self.ua = UNet(num_feat)
+        self.ua = UNet(num_feat, n_step=2)
 
     def forward(self, x):
         self.mean = self.mean.type_as(x)
@@ -208,7 +210,10 @@ class TJ(nn.Module):
 
         x = self.conv_first(x)
         ua = self.ua(x)
-        res = self.conv_after_body(self.body((x, ua))[0])
+        res = self.bd[0](x, ua)
+        for bd in self.bd[1:]:
+            res = bd(res, ua)
+        res = self.conv_after_body(res)
         res += x
 
         x = self.conv_last(self.upsample(res))
