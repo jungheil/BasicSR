@@ -145,10 +145,11 @@ class ResidualGroup(nn.Module):
 
         self.residual_group = make_layer(
             RCAB, num_block, num_feat=num_feat, squeeze_factor=squeeze_factor, res_scale=res_scale)
-        self.conv = DSConv(num_feat, num_feat)
+        self.conv = nn.Conv2d(num_feat, num_feat, 3, 1, 1, bias=False)
+        self.ua_conv = nn.Conv2d(num_feat, num_feat, 3, 1, 1, bias=False)
 
     def forward(self, x, ua):
-        res = self.conv(self.residual_group(x)) * ua
+        res = self.conv(self.residual_group(x)) * self.ua_conv(ua)
         return res + x
 
 
@@ -201,7 +202,7 @@ class TK(nn.Module):
 
         self.conv_after_body = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
         self.upsample = Upsample(upscale, num_feat)
-        self.conv_last = DSConv(num_feat, num_out_ch)
+        self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1, bias=False)
         self.ua = UNet(num_feat, n_step=2)
 
     def forward(self, x):
