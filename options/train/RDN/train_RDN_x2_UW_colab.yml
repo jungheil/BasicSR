@@ -54,25 +54,25 @@ network_g:
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  resume_state: experiments/102_RDN_X2_UW_5886/training_states/102000.state
-  # resume_state: ~
+  # resume_state: experiments/102_RDN_X2_UW_5886/training_states/102000.state
+  resume_state: ~
 
 # training settings
 train:
   ema_decay: 0.999
   optim_g:
     type: Adam
-    lr: !!float 2e-4
+    lr: !!float 1e-4
     weight_decay: 0
     betas: [0.9, 0.999]
 
   scheduler:
     type: MultiStepLR
-    milestones: [250000, 400000, 450000, 475000]
+    milestones: [200000, 350000, 450000, 475000]
     gamma: 0.5
 
   total_iter: 500000
-  warmup_iter: -1  # no warm up
+  warmup_iter: -1 # no warm up
 
   # losses
   pixel_opt:
