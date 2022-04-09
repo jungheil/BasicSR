@@ -54,8 +54,8 @@ network_g:
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  # resume_state: experiments/001_TL_X2_5886/training_states/28000.state
-  resume_state: ~
+  resume_state: experiments/001_TL_X2_5886/training_states/34000.state
+  # resume_state: ~
 
 # training settings
 train:

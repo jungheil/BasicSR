@@ -227,9 +227,13 @@ class Block(nn.Module):
         super(Block, self).__init__()
         self.res_scale = res_scale
 
+        # self.body = nn.Sequential(
+        #     nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
+        #     nn.InstanceNorm2d(num_feat, affine=True), nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
+        #     nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         self.body = nn.Sequential(
             nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
-            nn.InstanceNorm2d(num_feat, affine=True), nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
+            nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
             nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         # self.body = nn.Sequential(
         #     DepthWiseConv2dImplicitGEMM(num_feat, 7), nn.InstanceNorm2d(num_feat, affine=True),
