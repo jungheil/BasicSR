@@ -29,7 +29,7 @@ datasets:
     use_shuffle: true
     num_worker_per_gpu: 6
     batch_size_per_gpu: 16
-    dataset_enlarge_ratio: 100
+    dataset_enlarge_ratio: 10
     prefetch_mode: ~
 
   val:
@@ -56,7 +56,7 @@ network_g:
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  resume_state: experiments/103_EDSR_X2_UW_5886/training_states/128000.state
+  resume_state: experiments/103_EDSR_X2_UW_5886/training_states/190000.state
 
 # training settings
 train:

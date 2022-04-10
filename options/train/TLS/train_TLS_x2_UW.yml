@@ -1,6 +1,6 @@
 # TODO
 # general settings
-name: 101_RCAN_X2_UW_5886
+name: 201_TLS_X2_UW_5886
 model_type: SRModel
 scale: 2
 num_gpu: 1  # set num_gpu: 0 for cpu mode
@@ -11,8 +11,8 @@ datasets:
   train:
     name: UW
     type: PairedImageDataset
-    dataroot_gt: /content/datasets/UW/x2/hr
-    dataroot_lq: /content/datasets/UW/x2/lr_2x
+    dataroot_gt: datasets/UW/x2/hr
+    dataroot_lq: datasets/UW/x2/lr_2x
     # (for lmdb)
     # dataroot_gt: datasets/DIV2K/DIV2K_train_HR_sub.lmdb
     # dataroot_lq: datasets/DIV2K/DIV2K_train_LR_bicubic_X2_sub.lmdb
@@ -22,7 +22,7 @@ datasets:
       # (for lmdb)
       # type: lmdb
 
-    gt_size: 96
+    gt_size: 48
     use_hflip: true
     use_rot: true
 
@@ -36,32 +36,26 @@ datasets:
   val:
     name: USR248_VAL
     type: PairedImageDataset
-    dataroot_gt: /content/datasets/benchmark/USR248_VAL/HR
-    dataroot_lq: /content/datasets/benchmark/USR248_VAL/LR_bicubic/X2
+    dataroot_gt: datasets/benchmark/USR248_VAL/HR
+    dataroot_lq: datasets/benchmark/USR248_VAL/LR_bicubic/X2
     io_backend:
       type: disk
 
 # network structures
 network_g:
-  type: RCAN
+  type: TLS
   num_in_ch: 3
   num_out_ch: 3
+  num_modules: 4
   num_feat: 64
-  num_group: 10
-  num_block: 20
-  squeeze_factor: 16
   upscale: 2
-  res_scale: 1
-  img_range: 255.
-  rgb_mean: [0.33024667, 0.41541553, 0.42345934]
-
 
 # path
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  resume_state: experiments/101_RCAN_X2_UW_5886/training_states/44000.state
-  # resume_state: ~
+  # resume_state: experiments/201_TL_X2_UW_5886/training_states/94000.state
+  resume_state: ~
 
 # training settings
 train:
@@ -101,7 +95,7 @@ val:
 logger:
   print_freq: 100
   save_checkpoint_freq: !!float 2e3
-  use_tb_logger: false
+  use_tb_logger: true
   wandb:
     project: ~
     resume_id: ~
