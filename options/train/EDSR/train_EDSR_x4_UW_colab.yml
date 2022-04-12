@@ -1,18 +1,17 @@
-# TODO
 # general settings
-name: 106_SAN_X2_UW_5886
+name: 103_EDSR_X2_UW_5886
 model_type: SRModel
-scale: 2
+scale: 4
 num_gpu: 1  # set num_gpu: 0 for cpu mode
-manual_seed: 5886
+manual_seed: 10
 
 # dataset and data loader settings
 datasets:
   train:
     name: UW
     type: PairedImageDataset
-    dataroot_gt: /content/datasets/UW/x2/hr
-    dataroot_lq: /content/datasets/UW/x2/lr_2x
+    dataroot_gt: /content/datasets/UW/x4/hr
+    dataroot_lq: /content/datasets/UW/x4/lr_4x
     # (for lmdb)
     # dataroot_gt: datasets/DIV2K/DIV2K_train_HR_sub.lmdb
     # dataroot_lq: datasets/DIV2K/DIV2K_train_LR_bicubic_X2_sub.lmdb
@@ -22,7 +21,7 @@ datasets:
       # (for lmdb)
       # type: lmdb
 
-    gt_size: 48
+    gt_size: 96
     use_hflip: true
     use_rot: true
 
@@ -37,32 +36,27 @@ datasets:
     name: USR248_VAL
     type: PairedImageDataset
     dataroot_gt: /content/datasets/benchmark/USR248_VAL/HR
-    dataroot_lq: /content/datasets/benchmark/USR248_VAL/LR_bicubic/X2
+    dataroot_lq: /content/datasets/benchmark/USR248_VAL/LR_bicubic/X4
     io_backend:
       type: disk
 
 # network structures
 network_g:
-  type: SAN
+  type: EDSR
   num_in_ch: 3
   num_out_ch: 3
-  num_feat: 64
-  num_group: 10
-  num_block: 20
-  squeeze_factor: 16
-  upscale: 2
-  res_scale: 1
+  num_feat: 256
+  num_block: 32
+  upscale: 4
+  res_scale: 0.1
   img_range: 255.
   rgb_mean: [0.33024667, 0.41541553, 0.42345934]
-
 
 # path
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  # resume_state: experiments/010_RCAN_X2_UW_5886/training_states/80000.state
-  resume_state: ~
-  auto_resume: true
+  resume_state: experiments/103_EDSR_X2_UW_5886/training_states/446000.state
 
 # training settings
 train:
@@ -95,7 +89,7 @@ val:
   metrics:
     psnr: # metric name, can be arbitrary
       type: calculate_psnr
-      crop_border: 4
+      crop_border: 2
       test_y_channel: true
 
 # logging settings
