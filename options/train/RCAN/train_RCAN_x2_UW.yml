@@ -60,7 +60,7 @@ network_g:
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  resume_state: experiments/010_RCAN_X2_UW_5886/training_states/80000.state
+  resume_state: ~
 
 # training settings
 train:

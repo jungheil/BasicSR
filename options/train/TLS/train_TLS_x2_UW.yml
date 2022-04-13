@@ -1,6 +1,6 @@
 # TODO
 # general settings
-name: 201_TLS_X2_UW_5886
+name: 201_TLS_X2_UW_5886_mi
 model_type: SRModel
 scale: 2
 num_gpu: 1  # set num_gpu: 0 for cpu mode
@@ -54,7 +54,7 @@ network_g:
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  # resume_state: experiments/201_TL_X2_UW_5886/training_states/94000.state
+  # resume_state: experiments/201_TLS_X2_UW_5886_3/training_states/98000.state
   resume_state: ~
 
 # training settings

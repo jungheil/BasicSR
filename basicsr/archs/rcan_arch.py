@@ -224,7 +224,9 @@ class RCAN(nn.Module):
         act = nn.ReLU(True)
 
         # RGB mean for DIV2K
-        self.sub_mean = MeanShift(img_range, rgb_mean)
+        # self.sub_mean = MeanShift(img_range, rgb_mean)
+        self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
+        self.img_range = img_range
 
         # define head module
         modules_head = [conv(num_in_ch, n_feats, kernel_size)]
@@ -257,13 +259,16 @@ class RCAN(nn.Module):
         self.tail = nn.Sequential(*modules_tail)
 
     def forward(self, x):
-        x = self.sub_mean(x)
+        self.mean = self.mean.type_as(x)
+        x = (x - self.mean) * self.img_range
+
         x = self.head(x)
 
         res = self.body(x)
         res += x
 
         x = self.tail(res)
-        x = self.add_mean(x)
+
+        x = x / self.img_range + self.mean
 
         return x

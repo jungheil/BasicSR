@@ -328,8 +328,10 @@ class HAN(nn.Module):
             conv(n_feats, num_out_ch, kernel_size),
         ]
 
-        self.add_mean = MeanShift(img_range, rgb_mean, rgb_std, 1)
-
+        # self.add_mean = MeanShift(img_range, rgb_mean, rgb_std, 1)
+        self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
+        self.img_range = img_range
+        
         self.head = nn.Sequential(*modules_head)
         self.body = nn.Sequential(*modules_body)
         self.csa = CSAM_Module(n_feats)
@@ -339,7 +341,8 @@ class HAN(nn.Module):
         self.tail = nn.Sequential(*modules_tail)
 
     def forward(self, x):
-        x = self.sub_mean(x)
+        self.mean = self.mean.type_as(x)
+        x = (x - self.mean) * self.img_range
         x = self.head(x)
         res = x
         # pdb.set_trace()
@@ -365,6 +368,6 @@ class HAN(nn.Module):
         # res = self.csa(res)
 
         x = self.tail(res)
-        x = self.add_mean(x)
+        x = x / self.img_range + self.mean
 
         return x

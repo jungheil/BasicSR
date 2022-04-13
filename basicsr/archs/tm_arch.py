@@ -125,7 +125,7 @@ class RCAB(nn.Module):
         #     nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         self.body = nn.Sequential(
             nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
-            nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
+            nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.SiLU(),
             nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         # self.body = nn.Sequential(
         #     DepthWiseConv2dImplicitGEMM(num_feat, 7), nn.InstanceNorm2d(num_feat, affine=True),
@@ -202,7 +202,8 @@ class TM(nn.Module):
 
         self.img_range = img_range
         self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
-
+        self.img_range = img_range
+        
         self.conv_first = nn.Conv2d(num_in_ch, num_feat, 3, 1, 1)
         self.bd = nn.ModuleList([
             ResidualGroup(num_feat=num_feat, num_block=num_block, squeeze_factor=squeeze_factor, res_scale=res_scale)
@@ -212,9 +213,10 @@ class TM(nn.Module):
         self.conv_after_body = nn.Conv2d(num_feat + dis_feat * (num_group - 1), num_feat, 3, 1, 1)
         self.upsample = Upsample(upscale, num_feat)
         self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1, bias=False)
-        self.ua = UNet(num_feat, n_step=2, dltail=True)
+        self.ua = UNet(num_feat, n_step=3, dltail=True)
 
     def forward(self, x):
+
         self.mean = self.mean.type_as(x)
         x = (x - self.mean) * self.img_range
 

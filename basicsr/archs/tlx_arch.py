@@ -7,6 +7,24 @@ from basicsr.utils.registry import ARCH_REGISTRY
 torch.backends.cudnn.benchmark = True
 
 
+class MeanShift(nn.Conv2d):
+
+    def __init__(
+            self,
+            rgb_range,
+            rgb_mean=(0.4488, 0.4371, 0.4040),
+            # rgb_mean=(0.33024667, 0.41541553, 0.42345934),
+            rgb_std=(1.0, 1.0, 1.0),
+            sign=-1,
+    ):
+        super(MeanShift, self).__init__(3, 3, kernel_size=1)
+        std = torch.Tensor(rgb_std)
+        self.weight.data = torch.eye(3).view(3, 3, 1, 1) / std.view(3, 1, 1, 1)
+        self.bias.data = sign * rgb_range * torch.Tensor(rgb_mean) / std
+        for p in self.parameters():
+            p.requires_grad = False
+
+
 def pixelshuffle_block(in_channels, out_channels, upscale_factor=2, kernel_size=3, stride=1):
     conv = conv_layer(in_channels, out_channels * (upscale_factor**2), kernel_size, stride)
     pixel_shuffle = nn.PixelShuffle(upscale_factor)
@@ -154,8 +172,8 @@ class UDown(nn.Module):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
             nn.MaxPool2d(2), nn.Conv2d(in_channels, out_channels, 3, 1, 1),
-            nn.InstanceNorm2d(out_channels, affine=True), nn.ReLU(True), nn.Conv2d(out_channels, out_channels, 3, 1, 1),
-            nn.InstanceNorm2d(out_channels, affine=True), nn.ReLU(True))
+            nn.LeakyReLU(negative_slope=0.1, inplace=True), nn.Conv2d(out_channels, out_channels, 3, 1, 1),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True))
 
     def forward(self, x):
         return self.maxpool_conv(x)
@@ -168,10 +186,11 @@ class UUp(nn.Module):
         super().__init__()
 
         # if bilinear, use the normal convolutions to reduce the number of channels
-        self.up = nn.Upsample(scale_factor=2, mode='bicubic', align_corners=True)
+        self.up = nn.Upsample(scale_factor=2, mode='bilinear', align_corners=True)
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels + out_channels, out_channels, 3, 1, 1), nn.InstanceNorm2d(out_channels, affine=True), nn.ReLU(True),
-            nn.Conv2d(out_channels, out_channels, 3, 1, 1), nn.InstanceNorm2d(out_channels, affine=True), nn.ReLU(True))
+            nn.Conv2d(in_channels + out_channels, out_channels, 3, 1, 1),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True), nn.Conv2d(out_channels, out_channels, 3, 1, 1),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True))
 
     def forward(self, x1, x2):
         x1 = self.up(x1)  # input is CHW
@@ -191,8 +210,8 @@ class UNet(nn.Module):
         self.dltail = dltail
 
         self.head = nn.Sequential(
-            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.InstanceNorm2d(num_feat, affine=True), nn.ReLU(True),
-            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.InstanceNorm2d(num_feat, affine=True), nn.ReLU(True))
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.1, inplace=True),
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.1, inplace=True))
         self.down = nn.ModuleList()
         self.up = nn.ModuleList()
         for i in range(n_step):
@@ -228,14 +247,14 @@ class Block(nn.Module):
         super(Block, self).__init__()
         self.res_scale = res_scale
 
-        self.body = nn.Sequential(
-            nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
-            nn.InstanceNorm2d(num_feat, affine=True), nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
-            nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         # self.body = nn.Sequential(
         #     nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
-        #     nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
+        #     nn.InstanceNorm2d(num_feat, affine=True), nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
         #     nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
+        self.body = nn.Sequential(
+            nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
+            nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.SiLU(inplace=True),
+            nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         # self.body = nn.Sequential(
         #     DepthWiseConv2dImplicitGEMM(num_feat, 7), nn.InstanceNorm2d(num_feat, affine=True),
         #     nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
@@ -274,24 +293,8 @@ class IMDModule(nn.Module):
         return out_fused
 
 
-class MeanShift(nn.Conv2d):
-
-    def __init__(
-            self,
-            rgb_range,
-            rgb_mean=(0.4488, 0.4371, 0.4040),
-            # rgb_mean=(0.33024667, 0.41541553, 0.42345934),
-            rgb_std=(1.0, 1.0, 1.0),
-            sign=-1,
-    ):
-        super(MeanShift, self).__init__(3, 3, kernel_size=1)
-        std = torch.Tensor(rgb_std)
-        self.weight.data = torch.eye(3).view(3, 3, 1, 1) / std.view(3, 1, 1, 1)
-        self.bias.data = sign * rgb_range * torch.Tensor(rgb_mean) / std
-        for p in self.parameters():
-            p.requires_grad = False
 @ARCH_REGISTRY.register()
-class TLS(nn.Module):
+class TLX(nn.Module):
 
     def __init__(self,
                  num_in_ch=3,
@@ -300,8 +303,8 @@ class TLS(nn.Module):
                  num_out_ch=3,
                  upscale=4,
                  img_range=255.,
-                 rgb_mean=(0.33024667, 0.41541553, 0.42345934)):
-        super(TLS, self).__init__()
+                 rgb_mean=(0.4488, 0.4371, 0.4040)):
+        super(TLX, self).__init__()
         nf = num_feat
         self.fea_conv = conv_layer(num_in_ch, nf, kernel_size=3)
 
@@ -310,36 +313,36 @@ class TLS(nn.Module):
         self.IMDB2 = IMDModule(in_channels=nf)
         self.IMDB3 = IMDModule(in_channels=nf)
         self.IMDB4 = IMDModule(in_channels=nf)
-        # self.IMDB5 = IMDModule(in_channels=nf)
-        # self.IMDB6 = IMDModule(in_channels=nf)
+        self.IMDB5 = IMDModule(in_channels=nf)
+        self.IMDB6 = IMDModule(in_channels=nf)
         self.c = conv_block(nf * num_modules, nf, kernel_size=1, act_type='lrelu')
-        self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
-        self.img_range = img_range
+
         self.LR_conv = conv_layer(nf, nf, kernel_size=3)
 
         upsample_block = pixelshuffle_block
         self.upsampler = upsample_block(nf, nf, upscale_factor=upscale)
-        self.am = UNet(nf, 2, True)
+        self.am = UNet(nf, 3, True)
         self.tail = nn.Conv2d(nf, num_out_ch, 3, 1, 1)
 
+        self.submean = MeanShift(img_range, rgb_mean)
+        self.addmean = MeanShift(img_range, rgb_mean, sign=1)
+        self.up = nn.Upsample(scale_factor=upscale, mode='bilinear', align_corners=False)
+
     def forward(self, input):
-
-        self.mean = self.mean.type_as(x)
-        x = (x - self.mean) * self.img_range
-
+        input = self.submean(input)
         out_fea = self.fea_conv(input)
         ua = self.am(out_fea)
         out_B1 = self.IMDB1(out_fea, ua)
         out_B2 = self.IMDB2(out_B1, ua)
         out_B3 = self.IMDB3(out_B2, ua)
         out_B4 = self.IMDB4(out_B3, ua)
-        # out_B5 = self.IMDB5(out_B4, ua)
-        # out_B6 = self.IMDB6(out_B5, ua)
+        out_B5 = self.IMDB5(out_B4, ua)
+        out_B6 = self.IMDB6(out_B5, ua)
 
-        out_B = self.c(torch.cat([out_B1, out_B2, out_B3, out_B4], dim=1))
+        out_B = self.c(torch.cat([out_B1, out_B2, out_B3, out_B4, out_B5, out_B6], dim=1))
         out_lr = self.LR_conv(out_B) + out_fea
         output = self.upsampler(out_lr)
         output = self.tail(output)
-        x = x / self.img_range + self.mean
-
+        output += self.up(input)
+        output = self.addmean(output)
         return output
