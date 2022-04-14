@@ -154,8 +154,8 @@ class UDown(nn.Module):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
             nn.MaxPool2d(2), nn.Conv2d(in_channels, out_channels, 3, 1, 1),
-            nn.InstanceNorm2d(out_channels, affine=True), nn.ReLU(True), nn.Conv2d(out_channels, out_channels, 3, 1, 1),
-            nn.InstanceNorm2d(out_channels, affine=True), nn.ReLU(True))
+            nn.ReLU(True), nn.Conv2d(out_channels, out_channels, 3, 1, 1),
+            nn.ReLU(True))
 
     def forward(self, x):
         return self.maxpool_conv(x)
@@ -170,8 +170,8 @@ class UUp(nn.Module):
         # if bilinear, use the normal convolutions to reduce the number of channels
         self.up = nn.Upsample(scale_factor=2, mode='bicubic', align_corners=True)
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels + out_channels, out_channels, 3, 1, 1), nn.InstanceNorm2d(out_channels, affine=True), nn.ReLU(True),
-            nn.Conv2d(out_channels, out_channels, 3, 1, 1), nn.InstanceNorm2d(out_channels, affine=True), nn.ReLU(True))
+            nn.Conv2d(in_channels + out_channels, out_channels, 3, 1, 1), nn.ReLU(True),
+            nn.Conv2d(out_channels, out_channels, 3, 1, 1), nn.ReLU(True))
 
     def forward(self, x1, x2):
         x1 = self.up(x1)  # input is CHW
@@ -191,8 +191,8 @@ class UNet(nn.Module):
         self.dltail = dltail
 
         self.head = nn.Sequential(
-            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.InstanceNorm2d(num_feat, affine=True), nn.ReLU(True),
-            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.InstanceNorm2d(num_feat, affine=True), nn.ReLU(True))
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.ReLU(True),
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.ReLU(True))
         self.down = nn.ModuleList()
         self.up = nn.ModuleList()
         for i in range(n_step):
@@ -324,8 +324,8 @@ class TLS(nn.Module):
 
     def forward(self, input):
 
-        self.mean = self.mean.type_as(x)
-        x = (x - self.mean) * self.img_range
+        self.mean = self.mean.type_as(input)
+        input = (input - self.mean)
 
         out_fea = self.fea_conv(input)
         ua = self.am(out_fea)
@@ -340,6 +340,6 @@ class TLS(nn.Module):
         out_lr = self.LR_conv(out_B) + out_fea
         output = self.upsampler(out_lr)
         output = self.tail(output)
-        x = x / self.img_range + self.mean
+        output = output + self.mean
 
         return output

@@ -106,6 +106,37 @@ class UNet(nn.Module):
 #         y = self.attention(x)
 #         return x * y
 
+# class RCAB(nn.Module):
+#     """Residual Channel Attention Block (RCAB) used in RCAN.
+
+#     Args:
+#         num_feat (int): Channel number of intermediate features.
+#         squeeze_factor (int): Channel squeeze factor. Default: 16.
+#         res_scale (float): Scale the residual. Default: 1.
+#     """
+
+#     def __init__(self, num_feat, k_size=7, res_scale=1):
+#         super(RCAB, self).__init__()
+#         self.res_scale = res_scale
+
+#         # self.body = nn.Sequential(
+#         #     nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
+#         #     nn.InstanceNorm2d(num_feat, affine=True), nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
+#         #     nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
+#         self.body = nn.Sequential(
+#             nn.Conv2d(num_feat, num_feat, k_size, stride=1, padding=(k_size // 2), groups=num_feat, bias=False),
+#             nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.SiLU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
+#         # self.body = nn.Sequential(
+#         #     DepthWiseConv2dImplicitGEMM(num_feat, 7), nn.InstanceNorm2d(num_feat, affine=True),
+#         #     nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
+
+#         self.am = nn.Sequential(nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.Sigmoid())
+
+#     def forward(self, x):
+#         x, ua = x
+#         res = self.body(x) * self.am(ua)
+#         return (res * self.res_scale + x, ua)
+
 
 class RCAB(nn.Module):
     """Residual Channel Attention Block (RCAB) used in RCAN.
@@ -120,16 +151,8 @@ class RCAB(nn.Module):
         super(RCAB, self).__init__()
         self.res_scale = res_scale
 
-        # self.body = nn.Sequential(
-        #     nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
-        #     nn.InstanceNorm2d(num_feat, affine=True), nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
-        #     nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         self.body = nn.Sequential(
-            nn.Conv2d(num_feat, num_feat, k_size, stride=1, padding=(k_size//2), groups=num_feat, bias=False),
-            nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.SiLU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
-        # self.body = nn.Sequential(
-        #     DepthWiseConv2dImplicitGEMM(num_feat, 7), nn.InstanceNorm2d(num_feat, affine=True),
-        #     nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.1, inplace=True))
 
         self.am = nn.Sequential(nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.Sigmoid())
 
@@ -210,7 +233,8 @@ class TMS(nn.Module):
             for i in range(num_group)
         ])
         self.dis_conv = nn.ModuleList([nn.Conv2d(num_feat, dis_feat, 3, 1, 1) for i in range(num_group - 1)])
-        self.conv_after_body = nn.Conv2d(num_feat + dis_feat * (num_group - 1), num_feat, 3, 1, 1)
+        # self.conv_after_body = nn.Conv2d(num_feat + dis_feat * (num_group - 1), num_feat, 3, 1, 1)
+        self.conv_after_body = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
         self.upsample = Upsample(upscale, num_feat)
         self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1, bias=False)
         self.ua = UNet(num_feat, n_step=2, dltail=True)
@@ -218,22 +242,28 @@ class TMS(nn.Module):
     def forward(self, x):
 
         self.mean = self.mean.type_as(x)
-        x = x - self.mean
+        x = (x - self.mean) * self.img_range
 
         x = self.conv_first(x)
         ua = self.ua(x)
-        dis = []
-        res = self.bd[0](x, ua)
-        dis.append(self.dis_conv[0](res))
-        for i, bd in enumerate(self.bd[1:-1]):
-            res = bd(res, ua)
-            dis.append(self.dis_conv[i + 1](res))
-        dis.append(self.bd[-1](res, ua))
 
-        res = self.conv_after_body(torch.cat(dis, dim=1))
+        # dis = []
+        # res = self.bd[0](x, ua)
+        # dis.append(self.dis_conv[0](res))
+        # for i, bd in enumerate(self.bd[1:-1]):
+        #     res = bd(res, ua)
+        #     dis.append(self.dis_conv[i + 1](res))
+        # dis.append(self.bd[-1](res, ua))
+
+        res = x
+        for bd in self.bd:
+            res = bd(res, ua)
+
+        # res = self.conv_after_body(torch.cat(dis, dim=1))
+        res = self.conv_after_body(res)
         res += x
 
         x = self.conv_last(self.upsample(res))
-        x = x + self.mean
+        x = x / self.img_range + self.mean
 
         return x

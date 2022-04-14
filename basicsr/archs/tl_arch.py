@@ -138,7 +138,8 @@ class CCALayer(nn.Module):
         self.contrast = stdv_channels
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.conv_du = nn.Sequential(
-            nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True), nn.ReLU(inplace=True),
+            nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True),
             nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True), nn.Sigmoid())
 
     def forward(self, x):
@@ -153,8 +154,9 @@ class UDown(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
-            nn.MaxPool2d(2), nn.Conv2d(in_channels, out_channels, 3, 1, 1), nn.ReLU(True),
-            nn.Conv2d(out_channels, out_channels, 3, 1, 1), nn.ReLU(True))
+            nn.MaxPool2d(2), nn.Conv2d(in_channels, out_channels, 3, 1, 1),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True), nn.Conv2d(out_channels, out_channels, 3, 1, 1),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True))
 
     def forward(self, x):
         return self.maxpool_conv(x)
@@ -169,8 +171,9 @@ class UUp(nn.Module):
         # if bilinear, use the normal convolutions to reduce the number of channels
         self.up = nn.Upsample(scale_factor=2, mode='bicubic', align_corners=True)
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels + out_channels, out_channels, 3, 1, 1), nn.ReLU(True),
-            nn.Conv2d(out_channels, out_channels, 3, 1, 1), nn.ReLU(True))
+            nn.Conv2d(in_channels + out_channels, out_channels, 3, 1, 1),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True), nn.Conv2d(out_channels, out_channels, 3, 1, 1),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True))
 
     def forward(self, x1, x2):
         x1 = self.up(x1)  # input is CHW
@@ -190,8 +193,8 @@ class UNet(nn.Module):
         self.dltail = dltail
 
         self.head = nn.Sequential(
-            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.ReLU(True), nn.Conv2d(num_feat, num_feat, 3, 1, 1),
-            nn.ReLU(True))
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.1, inplace=True),
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.1, inplace=True))
         self.down = nn.ModuleList()
         self.up = nn.ModuleList()
         for i in range(n_step):
@@ -233,8 +236,7 @@ class Block(nn.Module):
         #     nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         self.body = nn.Sequential(
             nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
-            nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
-            nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
+            nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.SiLU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         # self.body = nn.Sequential(
         #     DepthWiseConv2dImplicitGEMM(num_feat, 7), nn.InstanceNorm2d(num_feat, affine=True),
         #     nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
@@ -276,9 +278,18 @@ class IMDModule(nn.Module):
 @ARCH_REGISTRY.register()
 class TL(nn.Module):
 
-    def __init__(self, num_in_ch=3, num_feat=64, num_modules=6, num_out_ch=3, upscale=4):
+    def __init__(self,
+                 num_in_ch=3,
+                 num_feat=64,
+                 num_modules=6,
+                 num_out_ch=3,
+                 upscale=4,
+                 img_range=255.,
+                 rgb_mean=(0.33024667, 0.41541553, 0.42345934)):
         super(TL, self).__init__()
         nf = num_feat
+        self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
+        self.img_range = img_range
         self.fea_conv = conv_layer(num_in_ch, nf, kernel_size=3)
 
         # IMDBs
@@ -294,10 +305,13 @@ class TL(nn.Module):
 
         upsample_block = pixelshuffle_block
         self.upsampler = upsample_block(nf, nf, upscale_factor=upscale)
-        self.am = UNet(nf, 2, True)
+        self.am = UNet(nf, 3, True)
         self.tail = nn.Conv2d(nf, num_out_ch, 3, 1, 1)
 
     def forward(self, input):
+        self.mean = self.mean.type_as(input)
+        input = (input - self.mean) * self.img_range
+
         out_fea = self.fea_conv(input)
         ua = self.am(out_fea)
         out_B1 = self.IMDB1(out_fea, ua)
@@ -311,4 +325,6 @@ class TL(nn.Module):
         out_lr = self.LR_conv(out_B) + out_fea
         output = self.upsampler(out_lr)
         output = self.tail(output)
+        output = output / self.img_range + self.mean
+
         return output
