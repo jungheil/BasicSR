@@ -14,8 +14,9 @@ class UDown(nn.Module):
     def __init__(self, in_channels, out_channels):
         super().__init__()
         self.maxpool_conv = nn.Sequential(
-            nn.MaxPool2d(2), nn.Conv2d(in_channels, out_channels, 3, 1, 1), nn.ReLU(True),
-            nn.Conv2d(out_channels, out_channels, 3, 1, 1), nn.ReLU(True))
+            nn.MaxPool2d(2), nn.Conv2d(in_channels, out_channels, 3, 1, 1),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True), nn.Conv2d(out_channels, out_channels, 3, 1, 1),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True))
 
     def forward(self, x):
         return self.maxpool_conv(x)
@@ -30,8 +31,9 @@ class UUp(nn.Module):
         # if bilinear, use the normal convolutions to reduce the number of channels
         self.up = nn.Upsample(scale_factor=2, mode='bicubic', align_corners=True)
         self.conv = nn.Sequential(
-            nn.Conv2d(in_channels + out_channels, out_channels, 3, 1, 1), nn.ReLU(True),
-            nn.Conv2d(out_channels, out_channels, 3, 1, 1), nn.ReLU(True))
+            nn.Conv2d(in_channels + out_channels, out_channels, 3, 1, 1),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True), nn.Conv2d(out_channels, out_channels, 3, 1, 1),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True))
 
     def forward(self, x1, x2):
         x1 = self.up(x1)  # input is CHW
@@ -51,8 +53,8 @@ class UNet(nn.Module):
         self.dltail = dltail
 
         self.head = nn.Sequential(
-            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.ReLU(True), nn.Conv2d(num_feat, num_feat, 3, 1, 1),
-            nn.ReLU(True))
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.1, inplace=True),
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.1, inplace=True))
         self.down = nn.ModuleList()
         self.up = nn.ModuleList()
         for i in range(n_step):
@@ -85,7 +87,6 @@ class UNet(nn.Module):
 
 #     def forward(self, x):
 #         return self.body(x)
-
 
 # class ChannelAttention(nn.Module):
 #     """Channel attention used in RCAN.
@@ -125,13 +126,14 @@ class RCAB(nn.Module):
         #     nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         self.body = nn.Sequential(
             nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
-            nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.SiLU(),
-            nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
+            nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.SiLU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         # self.body = nn.Sequential(
         #     DepthWiseConv2dImplicitGEMM(num_feat, 7), nn.InstanceNorm2d(num_feat, affine=True),
         #     nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
 
-        self.am = nn.Sequential(nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.Sigmoid())
+        self.am = nn.Sequential(
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.1, inplace=True),
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.Sigmoid())
 
     def forward(self, x):
         x, ua = x
@@ -203,17 +205,18 @@ class TM(nn.Module):
         self.img_range = img_range
         self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
         self.img_range = img_range
-        
+
         self.conv_first = nn.Conv2d(num_in_ch, num_feat, 3, 1, 1)
         self.bd = nn.ModuleList([
             ResidualGroup(num_feat=num_feat, num_block=num_block, squeeze_factor=squeeze_factor, res_scale=res_scale)
             for i in range(num_group)
         ])
         self.dis_conv = nn.ModuleList([nn.Conv2d(num_feat, dis_feat, 3, 1, 1) for i in range(num_group - 1)])
-        self.conv_after_body = nn.Conv2d(num_feat + dis_feat * (num_group - 1), num_feat, 3, 1, 1)
+        # self.conv_after_body = nn.Conv2d(num_feat + dis_feat * (num_group - 1), num_feat, 3, 1, 1)
+        self.conv_after_body = nn.Conv2d(num_feat, num_feat, 3, 1, 1)
         self.upsample = Upsample(upscale, num_feat)
         self.conv_last = nn.Conv2d(num_feat, num_out_ch, 3, 1, 1, bias=False)
-        self.ua = UNet(num_feat, n_step=3, dltail=True)
+        self.ua = UNet(num_feat, n_step=2, dltail=True)
 
     def forward(self, x):
 
@@ -222,15 +225,20 @@ class TM(nn.Module):
 
         x = self.conv_first(x)
         ua = self.ua(x)
-        dis = []
-        res = self.bd[0](x, ua)
-        dis.append(self.dis_conv[0](res))
-        for i, bd in enumerate(self.bd[1:-1]):
-            res = bd(res, ua)
-            dis.append(self.dis_conv[i + 1](res))
-        dis.append(self.bd[-1](res, ua))
+        # dis = []
+        # res = self.bd[0](x, ua)
+        # dis.append(self.dis_conv[0](res))
+        # for i, bd in enumerate(self.bd[1:-1]):
+        #     res = bd(res, ua)
+        #     dis.append(self.dis_conv[i + 1](res))
+        # dis.append(self.bd[-1](res, ua))
 
-        res = self.conv_after_body(torch.cat(dis, dim=1))
+        res = x
+        for bd in self.bd:
+            res = bd(res, ua)
+
+        # res = self.conv_after_body(torch.cat(dis, dim=1))
+        res = self.conv_after_body(res)
         res += x
 
         x = self.conv_last(self.upsample(res))

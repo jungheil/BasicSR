@@ -260,7 +260,9 @@ class IMDModule(nn.Module):
         self.d3 = nn.Conv2d(in_channels, distilled_channels, 1, 1, 0)
 
         self.c5 = nn.Conv2d(distilled_channels * 3 + in_channels, in_channels, 1, 1, 0)
-        self.am = nn.Sequential(nn.Conv2d(in_channels, in_channels, 3, 1, 1), nn.Sigmoid())
+        self.am = nn.Sequential(
+            nn.Conv2d(in_channels, in_channels, 3, 1, 1), nn.LeakyReLU(negative_slope=0.1, inplace=True),
+            nn.Conv2d(in_channels, in_channels, 3, 1, 1), nn.Sigmoid())
 
     def forward(self, input, ua):
         out_c1 = self.c1(input)
