@@ -1,0 +1,60 @@
+name: 101_RDN_X2_UW_TEST
+suffix: ~  # add suffix to saved images
+model_type: SRModel
+scale: 2
+crop_border: ~  # crop border when evaluation. If None, crop the scale pixels
+num_gpu: 1  # set num_gpu: 0 for cpu mode
+manual_seed: 5886
+
+datasets:
+  test_1:  # the 1st test dataset
+    name: USR248_VAL
+    type: PairedImageDataset
+    dataroot_gt: datasets/benchmark/USR248_VAL/HR
+    dataroot_lq: datasets/benchmark/USR248_VAL/LR_bicubic/X2
+    io_backend:
+      type: disk
+  test_2:  # the 2nd test dataset
+    name: USR248
+    type: PairedImageDataset
+    dataroot_gt: datasets/benchmark/USR248/HR
+    dataroot_lq: datasets/benchmark/USR248/LR_bicubic/X2
+    io_backend:
+      type: disk
+
+  test_3:
+    name: UFO120
+    type: PairedImageDataset
+    dataroot_gt: datasets/benchmark/UFO120/HR
+    dataroot_lq: datasets/benchmark/UFO120/LR_bicubic/X2
+    io_backend:
+      type: disk
+
+# network structures
+network_g:
+  type: RDN
+  num_in_ch: 3
+  num_out_ch: 3
+  num_feat: 64
+  RDNconfig: B
+  upscale: 2
+
+# path
+path:
+  pretrain_network_g: experiments/models/RDN_X2_UW.pth
+  strict_load_g: true
+
+# validation settings
+val:
+  save_img: true
+  suffix: ~  # add suffix to saved images, if None, use exp name
+
+  metrics:
+    psnr: # metric name, can be arbitrary
+      type: calculate_psnr
+      crop_border: 2
+      test_y_channel: true
+    ssim:
+      type: calculate_ssim
+      crop_border: 2
+      test_y_channel: true

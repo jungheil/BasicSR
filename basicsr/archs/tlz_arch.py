@@ -217,33 +217,20 @@ class UNet(nn.Module):
         return out
 
 
-class SALayer(nn.Module):
+class GCLayer(nn.Module):
 
     def __init__(self, channel, reduction=16):
-        super(SALayer, self).__init__()
+        super(GCLayer, self).__init__()
 
-        self.conv_du = nn.Sequential(
-            nn.Conv2d(channel, reduction, 1, padding=0, bias=True),
-            nn.Conv2d(reduction, reduction, 7, 1, 3, groups=reduction, bias=False), nn.SiLU(inplace=True),
-            nn.Conv2d(reduction, channel, 1, padding=0, bias=True), nn.Sigmoid())
-
-    def forward(self, x):
-        y = self.conv_du(x) + 1
-        return x * y
-
-
-class SALayer2(nn.Module):
-
-    def __init__(self, channel, reduction=16):
-        super(SALayer, self).__init__()
-
-        self.conv_du = nn.Sequential(
-            nn.Conv2d(channel, channel, 7, 1, 3, groups=channel, bias=False),
-            nn.Conv2d(channel, channel * 4, 1, 1, 0), nn.SiLU(inplace=True), nn.Conv2d(channel * 4, channel, 1, 1, 0))
+        self.CM = nn.Sequential(nn.Conv2d(channel, channel, 1, padding=0, bias=True), nn.Sigmoid())
+        self.T = nn.Sequential(
+            nn.Conv2d(channel, channel, 1, padding=0, bias=True), nn.InstanceNorm2d(channel, affine=True),
+            nn.Conv2d(channel, channel, 1, padding=0, bias=True))
 
     def forward(self, x):
-        y = self.conv_du(x) + 1
-        return x * y
+        y = x * self.CM(x)
+        y = self.T(y) + x
+        return y
 
 
 class Block(nn.Module):
@@ -263,14 +250,14 @@ class Block(nn.Module):
         #     nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
         #     nn.InstanceNorm2d(num_feat, affine=True), nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
         #     nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
-        self.body = nn.Sequential(
-            nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
-            nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.SiLU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
+        # self.body = nn.Sequential(
+        #     nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
+        #     nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.SiLU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         # self.body = nn.Sequential(
         #     DepthWiseConv2dImplicitGEMM(num_feat, 7), nn.InstanceNorm2d(num_feat, affine=True),
         #     nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
-        # self.body = nn.Sequential(
-        #     nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.05, inplace=True))
+        self.body = nn.Sequential(
+            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.05, inplace=True))
 
     def forward(self, x):
         res = self.body(x)
@@ -289,9 +276,12 @@ class IMDModule(nn.Module):
         self.d1 = nn.Conv2d(in_channels, distilled_channels, 1, 1, 0)
         self.d2 = nn.Conv2d(in_channels, distilled_channels, 1, 1, 0)
         self.d3 = nn.Conv2d(in_channels, distilled_channels, 1, 1, 0)
+        self.d4 = nn.Conv2d(in_channels, distilled_channels, 1, 1, 0)
 
-        self.c5 = nn.Conv2d(distilled_channels * 3 + in_channels, in_channels, 1, 1, 0)
-        self.cca = CCALayer(distilled_channels * 3 + in_channels)
+        self.c5 = nn.Conv2d(distilled_channels * 4, in_channels, 1, 1, 0)
+        # self.cca = CCALayer(distilled_channels * 4)
+        # self.cca2 = CCALayer(distilled_channels * 4)
+        self.cca = GCLayer(distilled_channels * 4)
 
     def forward(self, input):
         out_c1 = self.c1(input)
@@ -301,13 +291,22 @@ class IMDModule(nn.Module):
         out_c3 = self.c3(out_c2)
         distilled_c3 = self.d3(out_c3)
         out_c4 = self.c4(out_c3)
-        out = torch.cat([distilled_c1, distilled_c2, distilled_c3, out_c4], dim=1)
-        out_fused = self.c5(self.cca(out)) + input
-        return out_fused
+        distilled_c4 = self.d3(out_c4)
+        out_d = torch.cat([distilled_c1, distilled_c2, distilled_c3, distilled_c4], dim=1)
+        out_d = self.c5(self.cca(out_d))
+        out_b = out_c4 + input
+        return (out_b, out_d)
+
+
+#        out_b = self.cca(out_c4) + input
+#        return (out_b, out_d)
+# out_d = self.c5(self.cca(out_d))
+# out_b = self.cca2(out_c4) + input
+# return (out_b, out_d)
 
 
 @ARCH_REGISTRY.register()
-class TLT(nn.Module):
+class TLZ(nn.Module):
 
     def __init__(self,
                  num_in_ch=3,
@@ -317,7 +316,7 @@ class TLT(nn.Module):
                  upscale=4,
                  img_range=255.,
                  rgb_mean=(0.33024667, 0.41541553, 0.42345934)):
-        super(TLT, self).__init__()
+        super(TLZ, self).__init__()
         nf = num_feat
         self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
         self.img_range = img_range
@@ -336,7 +335,7 @@ class TLT(nn.Module):
 
         upsample_block = pixelshuffle_block
         self.upsampler = upsample_block(nf, nf, upscale_factor=upscale)
-        #        self.am = UNet(nf, 3, True)
+        # self.am = UNet(nf, 3, True)
         self.tail = nn.Conv2d(nf, num_out_ch, 3, 1, 1)
 
     def forward(self, input):
@@ -344,15 +343,14 @@ class TLT(nn.Module):
         input = (input - self.mean) * self.img_range
 
         out_fea = self.fea_conv(input)
-        #        ua = self.am(out_fea)
-        out_B1 = self.IMDB1(out_fea)
-        out_B2 = self.IMDB2(out_B1)
-        out_B3 = self.IMDB3(out_B2)
-        out_B4 = self.IMDB4(out_B3)
-        out_B5 = self.IMDB5(out_B4)
-        out_B6 = self.IMDB6(out_B5)
+        out_B1, dis_B1 = self.IMDB1(out_fea)
+        out_B2, dis_B2 = self.IMDB2(out_B1)
+        out_B3, dis_B3 = self.IMDB3(out_B2)
+        out_B4, dis_B4 = self.IMDB4(out_B3)
+        out_B5, dis_B5 = self.IMDB5(out_B4)
+        out_B6, dis_B6 = self.IMDB6(out_B5)
 
-        out_B = self.c(torch.cat([out_B1, out_B2, out_B3, out_B4, out_B5, out_B6], dim=1))
+        out_B = self.c(torch.cat([dis_B1, dis_B2, dis_B3, dis_B4, dis_B5, dis_B6], dim=1))
         out_lr = self.LR_conv(out_B) + out_fea
         output = self.upsampler(out_lr)
         output = self.tail(output)
