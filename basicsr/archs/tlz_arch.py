@@ -222,14 +222,23 @@ class GCLayer(nn.Module):
     def __init__(self, channel, reduction=16):
         super(GCLayer, self).__init__()
 
-        self.CM = nn.Sequential(nn.Conv2d(channel, channel, 1, padding=0, bias=True), nn.Sigmoid())
+        self.CM = nn.Sequential(nn.Conv2d(channel, 1, 1, padding=0, bias=True), nn.Sigmoid())
         self.T = nn.Sequential(
-            nn.Conv2d(channel, channel, 1, padding=0, bias=True), nn.InstanceNorm2d(channel, affine=True),
-            nn.Conv2d(channel, channel, 1, padding=0, bias=True))
-
+            nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True), nn.LayerNorm([channel//reduction, 1, 1]),
+            nn.LeakyReLU(negative_slope=0.1, inplace=True), nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True))
+#        self.T = nn.Sequential(
+#            nn.Conv2d(channel, channel, 1, padding=0, bias=True), 
+#            nn.LeakyReLU(negative_slope=0.1, inplace=True), nn.Conv2d(channel, channel, 1, padding=0, bias=True))
+        
     def forward(self, x):
-        y = x * self.CM(x)
-        y = self.T(y) + x
+        b, n, w, h = x.size()
+        v = x.view(-1, n, w * h)
+        k = self.CM(x).view(-1, 1, w * h)
+        k = k.permute(0, 2, 1)
+        y = torch.bmm(v, k)
+        y = y.view(b, n, 1, 1)
+        y = self.T(y)
+        y = y + x
         return y
 
 
@@ -250,14 +259,14 @@ class Block(nn.Module):
         #     nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
         #     nn.InstanceNorm2d(num_feat, affine=True), nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(),
         #     nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
-        # self.body = nn.Sequential(
-        #     nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
-        #     nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.SiLU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
+        self.body = nn.Sequential(
+            nn.Conv2d(num_feat, num_feat, 7, 1, 3, groups=num_feat, bias=False),
+            nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.SiLU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
         # self.body = nn.Sequential(
         #     DepthWiseConv2dImplicitGEMM(num_feat, 7), nn.InstanceNorm2d(num_feat, affine=True),
         #     nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0), nn.GELU(), nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0))
-        self.body = nn.Sequential(
-            nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.05, inplace=True))
+        # self.body = nn.Sequential(
+        #     nn.Conv2d(num_feat, num_feat, 3, 1, 1), nn.LeakyReLU(negative_slope=0.05, inplace=True))
 
     def forward(self, x):
         res = self.body(x)
@@ -284,6 +293,7 @@ class IMDModule(nn.Module):
         self.cca = GCLayer(distilled_channels * 4)
 
     def forward(self, input):
+#        input = self.cca(input)
         out_c1 = self.c1(input)
         distilled_c1 = self.d1(out_c1)
         out_c2 = self.c2(out_c1)
@@ -296,13 +306,13 @@ class IMDModule(nn.Module):
         out_d = self.c5(self.cca(out_d))
         out_b = out_c4 + input
         return (out_b, out_d)
-
-
 #        out_b = self.cca(out_c4) + input
 #        return (out_b, out_d)
-# out_d = self.c5(self.cca(out_d))
-# out_b = self.cca2(out_c4) + input
-# return (out_b, out_d)
+#        out_d = self.c5(self.cca(out_d))
+#        out_b = self.cca2(out_c4) + input
+#        return (out_b, out_d)
+#        out_b = out_c4 + input
+#        return (out_b, out_d)
 
 
 @ARCH_REGISTRY.register()

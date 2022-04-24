@@ -1,4 +1,4 @@
-name: TLZ_X2_UW_TEST
+name: TZ_X2_UW_TEST_BB
 suffix: ~  # add suffix to saved images
 model_type: SRModel
 scale: 2
@@ -32,16 +32,23 @@ datasets:
 
 # network structures
 network_g:
-  type: TLZ
+  type: TZ
   num_in_ch: 3
   num_out_ch: 3
+  num_dtl_c: 16
   num_modules: 6
+  num_block: 4
+  k_size: '333333'
+  conv_type: 'NNNNNN'
+  al: '0N'
+  bone_tail: False
+  att_res: False
   num_feat: 64
   upscale: 2
 
 # path
 path:
-  pretrain_network_g: experiments/models/TLZS1.pth
+  pretrain_network_g: experiments/models/TZ_BB.pth
   strict_load_g: true
 
 # validation settings

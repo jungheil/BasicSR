@@ -1,6 +1,6 @@
 # TODO
 # general settings
-name: 201_TLZ_X2_UW_5886_y7
+name: 901_TZ_X2_UW_5886_san
 model_type: SRModel
 scale: 2
 num_gpu: 1  # set num_gpu: 0 for cpu mode
@@ -43,10 +43,17 @@ datasets:
 
 # network structures
 network_g:
-  type: TLZ
+  type: TZ
   num_in_ch: 3
   num_out_ch: 3
+  num_dtl_c: 16
   num_modules: 6
+  num_block: 4
+  k_size: '333333'
+  conv_type: 'NNNNNN'
+  al: '0O'
+  att_res: False
+  bone_tail: False
   num_feat: 64
   upscale: 2
 
