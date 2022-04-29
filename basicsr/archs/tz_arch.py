@@ -9,6 +9,11 @@ from basicsr.utils.registry import ARCH_REGISTRY
 # from depthwise_conv2d_implicit_gemm import DepthWiseConv2dImplicitGEMM
 torch.backends.cudnn.benchmark = True
 
+from torch.utils.tensorboard import SummaryWriter
+from torchvision import utils
+
+# tb_logger = SummaryWriter(log_dir='./V')
+
 
 def pixelshuffle_block(in_channels, out_channels, upscale_factor=2, kernel_size=3, stride=1):
     conv = conv_layer(in_channels, out_channels * (upscale_factor**2), kernel_size, stride)
@@ -247,6 +252,7 @@ class NONLocalBlock2D(_NonLocalBlockND):
             bn_layer=bn_layer,
         )
 
+
 class eca_layer(nn.Module):
     """Constructs a ECA module.
     Args:
@@ -334,7 +340,7 @@ class CoordAtt(nn.Module):
 
 class CBAM(nn.Module):
 
-    def __init__(self, n_channels_in, reduction_ratio, kernel_size):
+    def __init__(self, n_channels_in, reduction_ratio, kernel_size, i=0):
         super(CBAM, self).__init__()
         self.n_channels_in = n_channels_in
         self.reduction_ratio = reduction_ratio
@@ -342,6 +348,7 @@ class CBAM(nn.Module):
 
         self.channel_attention = ChannelAttention(n_channels_in, reduction_ratio)
         self.spatial_attention = SpatialAttention(kernel_size)
+        self.i=i
 
     def forward(self, f):
         chan_att = self.channel_attention(f)
@@ -351,6 +358,8 @@ class CBAM(nn.Module):
         spat_att = self.spatial_attention(fp)
         # print(spat_att.size())
         fpp = spat_att * fp
+        # v = utils.make_grid(chan_att.transpose(1, 0), 8, normalize=True, scale_each=True, value_range=(0, 1))
+        # utils.save_image(v, 'A{}.png'.format(self.i))
         # print(fpp.size())
         return fpp
 
@@ -478,18 +487,18 @@ class GCLayer(nn.Module):
         return y
 
 
-def ALayer(type, channel):
+def ALayer(type, channel,i=0):
     if type == 'C':
         return CCALayer(channel)
     elif type == 'G':
         return GCLayer(channel)
     elif type == 'B':
-        return CBAM(n_channels_in=channel, reduction_ratio=2, kernel_size=3)
+        return CBAM(n_channels_in=channel, reduction_ratio=2, kernel_size=3, i=i)
     elif type == 'O':
         return CoordAtt(channel, channel)
     elif type == 'E':
         return eca_layer(channel)
-    elif type =='N':
+    elif type == 'N':
         return NONLocalBlock2D(channel)
     else:
         raise RuntimeError('alayer type?')
@@ -560,11 +569,11 @@ class Block(nn.Module):
 
 class IMDModule(nn.Module):
 
-    def __init__(self, in_channels, dtl_channels, num_b=4, k_size=3, conv='N', al='0C', att_res=False):
+    def __init__(self, in_channels, dtl_channels, num_b=4, k_size=3, conv='N', al='0C', att_res=False,i=0):
         super(IMDModule, self).__init__()
         self.al = al
         self.num_b = num_b
-        self.att_res=att_res
+        self.att_res = att_res
         self.c = nn.ModuleList([Block(in_channels, k_size=k_size, conv=conv) for _ in range(num_b)])
         self.d = nn.ModuleList([nn.Conv2d(in_channels, dtl_channels, 1, 1, 0) for _ in range(num_b)])
 
@@ -572,9 +581,9 @@ class IMDModule(nn.Module):
         # self.tailbone =
 
         if al[0] != '0':
-            self.al0 = ALayer(al[0], in_channels)
+            self.al0 = ALayer(al[0], in_channels,i)
         if al[1] != '0':
-            self.al1 = ALayer(al[1], dtl_channels * self.num_b)
+            self.al1 = ALayer(al[1], dtl_channels * self.num_b,i+10)
 
     def forward(self, input):
         dtl = []
@@ -585,7 +594,7 @@ class IMDModule(nn.Module):
         d = torch.cat(dtl, dim=1)
         if self.al[0] != '0':
             if self.att_res:
-                out = self.al0(out)+out
+                out = self.al0(out) + out
             else:
                 out = self.al0(out)
         if self.al[1] != '0':
@@ -625,7 +634,7 @@ class TZ(nn.Module):
         self.G = nn.ModuleList()
 
         for i in range(num_modules):
-            self.G.append(IMDModule(nf, num_dtl_c, num_block, int(k_size[i]), conv_type[i], al, att_res))
+            self.G.append(IMDModule(nf, num_dtl_c, num_block, int(k_size[i]), conv_type[i], al, att_res,i))
 
         if bone_tail:
             tail_f = num_dtl_c * num_block * num_modules + num_feat
@@ -643,23 +652,62 @@ class TZ(nn.Module):
         self.upsampler = upsample_block(nf, nf, upscale_factor=upscale)
         self.tail = nn.Conv2d(nf, num_out_ch, 3, 1, 1)
 
-    def forward(self, x):
+    def forward(self, x, i=0):
+        # i = 1
         self.mean = self.mean.type_as(x)
         x = (x - self.mean) * self.img_range
+        # if i != 0:
+        #     xv = utils.make_grid(x, 16, normalize=True, scale_each=True)
+        #     tb_logger.add_image('raw', xv, i)
 
         x = self.fea_conv(x)
         dtl = []
+        # V = []
+        # Vd = []
         out, d = self.G[0](x)
+        # Vd.append(utils.make_grid(d.transpose(0, 1), 8, normalize=True, scale_each=True))
+        # V.append(utils.make_grid(out.transpose(0, 1), 8, normalize=True, scale_each=True))
+
         dtl.append(d)
         for g in self.G[1:]:
             out, d = g(out)
+            # Vd.append(utils.make_grid(d.transpose(0, 1), 8, normalize=True, scale_each=True))
+            # V.append(utils.make_grid(out.transpose(0, 1), 8, normalize=True, scale_each=True))
             dtl.append(d)
         if self.bone_tail:
             dtl.append(out)
+        # if i != 0:
+        #     # dv1 = utils.make_grid(dtl[0].transpose(0, 1), 8, normalize=True, scale_each=True)
+        #     # tb_logger.add_image('1', dv1, i)
+        #     # dv2= utils.make_grid(dtl[1].transpose(0, 1), 8, normalize=True, scale_each=True)
+        #     # tb_logger.add_image('2', dv2, i)
+        #     # dv3 = utils.make_grid(dtl[2].transpose(0, 1), 8, normalize=True, scale_each=True)
+        #     # tb_logger.add_image('3', dv3, i)
+        #     # dv4 = utils.make_grid(dtl[3].transpose(0, 1), 8, normalize=True, scale_each=True)
+        #     # tb_logger.add_image('4', dv4, i)
+        #     # dv6 = utils.make_grid(dtl[5].transpose(0, 1), 8, normalize=True, scale_each=True)
+        #     # print(dv6.shape)
+        #     # print(dv5.shape)
+        #     # tb_logger.add_image('5', dv6, i)
+        #     # tb_logger.add_image('6', dv5, i)
+        #     for i, v in enumerate(V):
+        #         utils.save_image(v, '{}.png'.format(i))
+        #         utils.save_image(Vd[i], 'd{}.png'.format(i))
+
         out = self.dc(torch.cat(dtl, dim=1))
         out_lr = self.fuse(out) + x
         output = self.upsampler(out_lr)
         output = self.tail(output)
         output = output / self.img_range + self.mean
+
+        # for name, param in self.named_parameters():
+        #     if name == 'dc.0.weight':
+        #         print(param.data.shape)
+        #         for i in range(6):
+        #             for j in range(4):
+        #                 tb_logger.add_histogram(
+        #                     tag=name + '_data{},{}'.format(i, j),
+        #                     values=param.data[:, i * 64 + j * 16:i * 64 + (j + 1) * 16, :, :],
+        #                     global_step=1)
 
         return output

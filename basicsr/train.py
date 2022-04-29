@@ -165,6 +165,7 @@ def train_pipeline(root_path):
             # update learning rate
             model.update_learning_rate(current_iter, warmup_iter=opt['train'].get('warmup_iter', -1))
             # training
+            # tb_logger.add_graph(model, train_data)
             model.feed_data(train_data)
             model.optimize_parameters(current_iter)
             iter_timer.record()

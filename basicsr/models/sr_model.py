@@ -91,6 +91,7 @@ class SRModel(BaseModel):
 
     def optimize_parameters(self, current_iter):
         self.optimizer_g.zero_grad()
+
         self.output = self.net_g(self.lq)
 
         l_total = 0
@@ -118,7 +119,7 @@ class SRModel(BaseModel):
         if self.ema_decay > 0:
             self.model_ema(decay=self.ema_decay)
 
-    def test(self):
+    def test(self, current_iter=0):
         if hasattr(self, 'net_g_ema'):
             self.net_g_ema.eval()
             with torch.no_grad():
@@ -128,6 +129,7 @@ class SRModel(BaseModel):
             with torch.no_grad():
                 self.output = self.net_g(self.lq)
             self.net_g.train()
+
 
     def dist_validation(self, dataloader, current_iter, tb_logger, save_img):
         if self.opt['rank'] == 0:
@@ -153,8 +155,9 @@ class SRModel(BaseModel):
 
         for idx, val_data in enumerate(dataloader):
             img_name = osp.splitext(osp.basename(val_data['lq_path'][0]))[0]
+
             self.feed_data(val_data)
-            self.test()
+            self.test(current_iter)
 
             visuals = self.get_current_visuals()
             sr_img = tensor2img([visuals['result']])

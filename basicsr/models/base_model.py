@@ -8,6 +8,9 @@ from torch.nn.parallel import DataParallel, DistributedDataParallel
 from basicsr.models import lr_scheduler as lr_scheduler
 from basicsr.utils import get_root_logger
 from basicsr.utils.dist_util import master_only
+# from ptflops import get_model_complexity_info
+# from thop import profile
+
 
 
 class BaseModel():
@@ -143,9 +146,16 @@ class BaseModel():
         net = self.get_bare_model(net)
         net_str = str(net)
         net_params = sum(map(lambda x: x.numel(), net.parameters()))
+        # macs, params = get_model_complexity_info(
+        #     net, (1, 224, 224), as_strings=True, print_per_layer_stat=True, verbose=True)
+        # input = torch.randn(1, 3, 224, 224).to(self.device)
+        # macs, params = profile(net, inputs=(input, ))
+
+
 
         logger = get_root_logger()
         logger.info(f'Network: {net_cls_str}, with parameters: {net_params:,d}')
+        # logger.info(f'macs: {macs}, with params: {params}')
         logger.info(net_str)
 
     def _set_lr(self, lr_groups_l):
