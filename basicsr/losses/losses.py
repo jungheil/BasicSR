@@ -44,7 +44,7 @@ class L1Loss(nn.Module):
 
         self.loss_weight = loss_weight
         self.reduction = reduction
-        self.crop_bd = crop_bd
+        self.crop_bd = int(crop_bd)
 
     def forward(self, pred, target, weight=None, **kwargs):
         """
@@ -53,8 +53,11 @@ class L1Loss(nn.Module):
             target (Tensor): of shape (N, C, H, W). Ground truth tensor.
             weight (Tensor, optional): of shape (N, C, H, W). Element-wise weights. Default: None.
         """
-        p = pred[:, :, self.crop_bd:-self.crop_bd, self.crop_bd:-self.crop_bd]
-        t = target[:, :, self.crop_bd:-self.crop_bd, self.crop_bd:-self.crop_bd]
+        p = pred
+        t = target
+        if self.crop_bd != 0:
+            p = pred[:, :, self.crop_bd:-self.crop_bd, self.crop_bd:-self.crop_bd]
+            t = target[:, :, self.crop_bd:-self.crop_bd, self.crop_bd:-self.crop_bd]
         return self.loss_weight * l1_loss(p, t, weight, reduction=self.reduction)
 
 

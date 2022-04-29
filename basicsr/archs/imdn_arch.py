@@ -195,6 +195,9 @@ class IMDN(nn.Module):
         self.upsampler = upsample_block(nf, num_out_ch, upscale_factor=upscale)
 
     def forward(self, input):
+        from torch.utils.tensorboard import SummaryWriter
+        from torchvision import utils
+        tb_logger = SummaryWriter(log_dir='./V')
         out_fea = self.fea_conv(input)
         out_B1 = self.IMDB1(out_fea)
         out_B2 = self.IMDB2(out_B1)
@@ -206,4 +209,22 @@ class IMDN(nn.Module):
         out_B = self.c(torch.cat([out_B1, out_B2, out_B3, out_B4, out_B5, out_B6], dim=1))
         out_lr = self.LR_conv(out_B) + out_fea
         output = self.upsampler(out_lr)
+        v1 = utils.make_grid(out_B1.transpose(0, 1), 8, normalize=True, scale_each=True)
+        v2 = utils.make_grid(out_B2.transpose(0, 1), 8, normalize=True, scale_each=True)
+        v3 = utils.make_grid(out_B3.transpose(0, 1), 8, normalize=True, scale_each=True)
+        v4 = utils.make_grid(out_B4.transpose(0, 1), 8, normalize=True, scale_each=True)
+        v5 = utils.make_grid(out_B5.transpose(0, 1), 8, normalize=True, scale_each=True)
+        v6 = utils.make_grid(out_B6.transpose(0, 1), 8, normalize=True, scale_each=True)
+        utils.save_image(v1, 'v1.png')
+        utils.save_image(v2, 'v2.png')
+        utils.save_image(v3, 'v3.png')
+        utils.save_image(v4, 'v4.png')
+        utils.save_image(v5, 'v5.png')
+        utils.save_image(v6, 'v6.png')
+        for name, param in self.named_parameters():
+            # print(name)
+            if name == 'c.0.weight':
+                for i in range(6):
+                    tb_logger.add_histogram(
+                        tag=name + '_data{}'.format(i), values=param.data[:, i * 64:(i + 1) * 64, :, :], global_step=1)
         return output
