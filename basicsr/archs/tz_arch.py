@@ -153,6 +153,25 @@ def sequential(*args):
     return nn.Sequential(*modules)
 
 
+class SELayer(nn.Module):
+
+    def __init__(self, channel, reduction=16):
+        super(SELayer, self).__init__()
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.max_pool = nn.AdaptiveMaxPool2d(1)
+
+        self.fc = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False), nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False), nn.Sigmoid())
+
+    def forward(self, x):
+        b, c, _, _ = x.size()
+        y = self.avg_pool(x) + self.max_pool(x)
+        y = y.view(b, c)
+        y = self.fc(y).view(b, c, 1, 1)
+        return x * y.expand_as(x)
+
+
 class _NonLocalBlockND(nn.Module):
 
     def __init__(self, in_channels, inter_channels=None, dimension=3, sub_sample=True, bn_layer=True):
@@ -450,9 +469,9 @@ class CCALayer(nn.Module):
         self.contrast = stdv_channels
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.conv_du = nn.Sequential(
-            nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True, padding_mode='replicate'),
+            nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True, padding_mode='replicate'),
+            nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True),
             nn.Sigmoid(),
         )
 
@@ -505,6 +524,8 @@ def ALayer(type, channel, i=0):
         return eca_layer(channel)
     elif type == 'N':
         return NONLocalBlock2D(channel)
+    elif type == 'S':
+        return SELayer(channel)
     else:
         raise RuntimeError('alayer type?')
 
