@@ -9,14 +9,19 @@ from basicsr.utils.registry import ARCH_REGISTRY
 # from depthwise_conv2d_implicit_gemm import DepthWiseConv2dImplicitGEMM
 torch.backends.cudnn.benchmark = True
 
-from torch.utils.tensorboard import SummaryWriter
-from torchvision import utils
+global DEBUG
+DEBUG = True
 
-# tb_logger = SummaryWriter(log_dir='./V')
+if DEBUG:
+    from torch.utils.tensorboard import SummaryWriter
+    from torchvision import utils
+
+    tb_logger = SummaryWriter(log_dir='./V')
 
 
-def pixelshuffle_block(in_channels, out_channels, upscale_factor=2, kernel_size=3, stride=1):
-    conv = conv_layer(in_channels, out_channels * (upscale_factor**2), kernel_size, stride)
+def pixelshuffle_block(in_channels, out_channels, upscale_factor=2, kernel_size=3, stride=1, padding=1):
+    conv = nn.Conv2d(
+        in_channels, out_channels * (upscale_factor**2), kernel_size, stride, padding, padding_mode='replicate')
     pixel_shuffle = nn.PixelShuffle(upscale_factor)
     return sequential(conv, pixel_shuffle)
 
@@ -308,12 +313,12 @@ class CoordAtt(nn.Module):
 
         mip = max(8, inp // reduction)
 
-        self.conv1 = nn.Conv2d(inp, mip, kernel_size=1, stride=1, padding=0)
+        self.conv1 = nn.Conv2d(inp, mip, kernel_size=1, stride=1, padding=0, padding_mode='replicate')
         self.bn1 = nn.BatchNorm2d(mip)
         self.act = h_swish()
 
-        self.conv_h = nn.Conv2d(mip, oup, kernel_size=1, stride=1, padding=0)
-        self.conv_w = nn.Conv2d(mip, oup, kernel_size=1, stride=1, padding=0)
+        self.conv_h = nn.Conv2d(mip, oup, kernel_size=1, stride=1, padding=0, padding_mode='replicate')
+        self.conv_w = nn.Conv2d(mip, oup, kernel_size=1, stride=1, padding=0, padding_mode='replicate')
 
     def forward(self, x):
         identity = x
@@ -348,7 +353,7 @@ class CBAM(nn.Module):
 
         self.channel_attention = ChannelAttention(n_channels_in, reduction_ratio)
         self.spatial_attention = SpatialAttention(kernel_size)
-        self.i=i
+        self.i = i
 
     def forward(self, f):
         chan_att = self.channel_attention(f)
@@ -358,7 +363,7 @@ class CBAM(nn.Module):
         spat_att = self.spatial_attention(fp)
         # print(spat_att.size())
         fpp = spat_att * fp
-        # v = utils.make_grid(chan_att.transpose(1, 0), 8, normalize=True, scale_each=True, value_range=(0, 1))
+        # v = utils.make_grid(spat_att.transpose(1, 0), 8, normalize=True, scale_each=True, value_range=(0, 1))
         # utils.save_image(v, 'A{}.png'.format(self.i))
         # print(fpp.size())
         return fpp
@@ -376,7 +381,7 @@ class SpatialAttention(nn.Module):
             out_channels=1,
             kernel_size=kernel_size,
             padding=int((kernel_size - 1) / 2),
-        )
+            padding_mode='replicate')
         # batchnorm
 
     def forward(self, x):
@@ -445,9 +450,9 @@ class CCALayer(nn.Module):
         self.contrast = stdv_channels
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.conv_du = nn.Sequential(
-            nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True),
+            nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True, padding_mode='replicate'),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True),
+            nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True, padding_mode='replicate'),
             nn.Sigmoid(),
         )
 
@@ -462,19 +467,19 @@ class GCLayer(nn.Module):
     def __init__(self, channel, reduction=16, ln=True):
         super(GCLayer, self).__init__()
 
-        self.CM = nn.Sequential(nn.Conv2d(channel, 1, 1, padding=0, bias=True), nn.Sigmoid())
+        self.CM = nn.Sequential(nn.Conv2d(channel, 1, 1, padding=0, bias=True, padding_mode='replicate'), nn.Sigmoid())
         if ln:
             self.T = nn.Sequential(
-                nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True),
+                nn.Conv2d(channel, channel // reduction, 1, padding=0, bias=True, padding_mode='replicate'),
                 nn.LayerNorm([channel // reduction, 1, 1]),
                 nn.LeakyReLU(negative_slope=0.1, inplace=True),
-                nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True),
+                nn.Conv2d(channel // reduction, channel, 1, padding=0, bias=True, padding_mode='replicate'),
             )
         else:
             self.T = nn.Sequential(
-                nn.Conv2d(channel, channel, 1, padding=0, bias=True),
+                nn.Conv2d(channel, channel, 1, padding=0, bias=True, padding_mode='replicate'),
                 nn.LeakyReLU(negative_slope=0.1, inplace=True),
-                nn.Conv2d(channel, channel, 1, padding=0, bias=True),
+                nn.Conv2d(channel, channel, 1, padding=0, bias=True, padding_mode='replicate'),
             )
 
     def forward(self, x):
@@ -487,7 +492,7 @@ class GCLayer(nn.Module):
         return y
 
 
-def ALayer(type, channel,i=0):
+def ALayer(type, channel, i=0):
     if type == 'C':
         return CCALayer(channel)
     elif type == 'G':
@@ -525,7 +530,7 @@ class Block(nn.Module):
 
         if conv == 'N':
             self.body = nn.Sequential(
-                nn.Conv2d(num_feat, num_feat, k_size, 1, padding, dilation),
+                nn.Conv2d(num_feat, num_feat, k_size, 1, padding, dilation, padding_mode='replicate'),
                 nn.LeakyReLU(negative_slope=0.05, inplace=True),
             )
         elif conv == 'T':
@@ -539,10 +544,10 @@ class Block(nn.Module):
                     dilation,
                     groups=num_feat,
                     bias=False,
-                ),
-                nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0),
+                    padding_mode='replicate'),
+                nn.Conv2d(num_feat, num_feat * 4, 1, 1, 0, padding_mode='replicate'),
                 nn.SiLU(),
-                nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0),
+                nn.Conv2d(num_feat * 4, num_feat, 1, 1, 0, padding_mode='replicate'),
             )
         elif conv == 'D':
             self.body = nn.Sequential(
@@ -556,7 +561,7 @@ class Block(nn.Module):
                     groups=num_feat,
                     bias=False,
                 ),
-                nn.Conv2d(num_feat, num_feat, 1, 1, 0),
+                nn.Conv2d(num_feat, num_feat, 1, 1, 0, padding_mode='replicate'),
                 nn.SiLU(),
             )
         else:
@@ -569,21 +574,22 @@ class Block(nn.Module):
 
 class IMDModule(nn.Module):
 
-    def __init__(self, in_channels, dtl_channels, num_b=4, k_size=3, conv='N', al='0C', att_res=False,i=0):
+    def __init__(self, in_channels, dtl_channels, num_b=4, k_size=3, conv='N', al='0C', att_res=False, i=0):
         super(IMDModule, self).__init__()
         self.al = al
         self.num_b = num_b
         self.att_res = att_res
         self.c = nn.ModuleList([Block(in_channels, k_size=k_size, conv=conv) for _ in range(num_b)])
-        self.d = nn.ModuleList([nn.Conv2d(in_channels, dtl_channels, 1, 1, 0) for _ in range(num_b)])
+        self.d = nn.ModuleList(
+            [nn.Conv2d(in_channels, dtl_channels, 1, 1, 0, padding_mode='replicate') for _ in range(num_b)])
 
-        self.dtl_tail = nn.Conv2d(dtl_channels * self.num_b, in_channels, 1, 1, 0)
+        self.dtl_tail = nn.Conv2d(dtl_channels * self.num_b, in_channels, 1, 1, 0, padding_mode='replicate')
         # self.tailbone =
 
         if al[0] != '0':
-            self.al0 = ALayer(al[0], in_channels,i)
+            self.al0 = ALayer(al[0], in_channels, i)
         if al[1] != '0':
-            self.al1 = ALayer(al[1], dtl_channels * self.num_b,i+10)
+            self.al1 = ALayer(al[1], dtl_channels * self.num_b, i + 10)
 
     def forward(self, input):
         dtl = []
@@ -629,70 +635,59 @@ class TZ(nn.Module):
         self.mean = torch.Tensor(rgb_mean).view(1, 3, 1, 1)
         self.img_range = img_range
         self.bone_tail = bone_tail
-        self.fea_conv = conv_layer(num_in_ch, nf, kernel_size=3)
+        self.fea_conv = nn.Conv2d(num_in_ch, nf, 3, 1, 1, padding_mode='replicate')
         # IMDBs
         self.G = nn.ModuleList()
 
         for i in range(num_modules):
-            self.G.append(IMDModule(nf, num_dtl_c, num_block, int(k_size[i]), conv_type[i], al, att_res,i))
+            self.G.append(IMDModule(nf, num_dtl_c, num_block, int(k_size[i]), conv_type[i], al, att_res, i))
 
         if bone_tail:
             tail_f = num_dtl_c * num_block * num_modules + num_feat
         else:
             tail_f = num_dtl_c * num_block * num_modules
         # TODO zuowanshiyanhou,kaolv 3*3, tongdaoxiaojianbuyaoyong relu
-        self.dc = nn.Conv2d(tail_f, nf, 1, 1, 0)
+        self.dc = nn.Conv2d(tail_f, nf, 1, 1, 0, padding_mode='replicate')
 
         self.fuse = nn.Sequential(
-            nn.Conv2d(nf, nf, 3, 1, 1),
+            nn.Conv2d(nf, nf, 3, 1, 1, padding_mode='replicate'),
             nn.LeakyReLU(negative_slope=0.1, inplace=True),
-            nn.Conv2d(nf, nf, 3, 1, 1),
+            nn.Conv2d(nf, nf, 3, 1, 1, padding_mode='replicate'),
         )
         upsample_block = pixelshuffle_block
         self.upsampler = upsample_block(nf, nf, upscale_factor=upscale)
-        self.tail = nn.Conv2d(nf, num_out_ch, 3, 1, 1)
+        self.tail = nn.Conv2d(nf, num_out_ch, 3, 1, 1, padding_mode='replicate')
 
     def forward(self, x, i=0):
-        # i = 1
         self.mean = self.mean.type_as(x)
         x = (x - self.mean) * self.img_range
-        # if i != 0:
-        #     xv = utils.make_grid(x, 16, normalize=True, scale_each=True)
-        #     tb_logger.add_image('raw', xv, i)
 
         x = self.fea_conv(x)
         dtl = []
-        # V = []
-        # Vd = []
+        if DEBUG:
+            V = []
+            Vd = []
         out, d = self.G[0](x)
-        # Vd.append(utils.make_grid(d.transpose(0, 1), 8, normalize=True, scale_each=True))
-        # V.append(utils.make_grid(out.transpose(0, 1), 8, normalize=True, scale_each=True))
+        if DEBUG:
+            Vd.append(utils.make_grid(d.transpose(0, 1), 8, normalize=True, scale_each=True))
+            V.append(utils.make_grid(out.transpose(0, 1), 8, normalize=True, scale_each=True))
 
         dtl.append(d)
         for g in self.G[1:]:
             out, d = g(out)
-            # Vd.append(utils.make_grid(d.transpose(0, 1), 8, normalize=True, scale_each=True))
-            # V.append(utils.make_grid(out.transpose(0, 1), 8, normalize=True, scale_each=True))
+            if DEBUG:
+                Vd.append(utils.make_grid(d.transpose(0, 1), 8, normalize=True, scale_each=True))
+                V.append(utils.make_grid(out.transpose(0, 1), 8, normalize=True, scale_each=True))
             dtl.append(d)
         if self.bone_tail:
             dtl.append(out)
-        # if i != 0:
-        #     # dv1 = utils.make_grid(dtl[0].transpose(0, 1), 8, normalize=True, scale_each=True)
-        #     # tb_logger.add_image('1', dv1, i)
-        #     # dv2= utils.make_grid(dtl[1].transpose(0, 1), 8, normalize=True, scale_each=True)
-        #     # tb_logger.add_image('2', dv2, i)
-        #     # dv3 = utils.make_grid(dtl[2].transpose(0, 1), 8, normalize=True, scale_each=True)
-        #     # tb_logger.add_image('3', dv3, i)
-        #     # dv4 = utils.make_grid(dtl[3].transpose(0, 1), 8, normalize=True, scale_each=True)
-        #     # tb_logger.add_image('4', dv4, i)
-        #     # dv6 = utils.make_grid(dtl[5].transpose(0, 1), 8, normalize=True, scale_each=True)
-        #     # print(dv6.shape)
-        #     # print(dv5.shape)
-        #     # tb_logger.add_image('5', dv6, i)
-        #     # tb_logger.add_image('6', dv5, i)
+
+        # if DEBUG:
         #     for i, v in enumerate(V):
-        #         utils.save_image(v, '{}.png'.format(i))
-        #         utils.save_image(Vd[i], 'd{}.png'.format(i))
+        #         # utils.save_image(v, '{}.png'.format(i))
+        #         # utils.save_image(Vd[i], 'd{}.png'.format(i))
+        #         tb_logger.add_image('out{}'.format(i), v, 0)
+        #         tb_logger.add_image('d{}'.format(i), Vd[i], 0)
 
         out = self.dc(torch.cat(dtl, dim=1))
         out_lr = self.fuse(out) + x
@@ -700,14 +695,21 @@ class TZ(nn.Module):
         output = self.tail(output)
         output = output / self.img_range + self.mean
 
-        # for name, param in self.named_parameters():
-        #     if name == 'dc.0.weight':
-        #         print(param.data.shape)
-        #         for i in range(6):
-        #             for j in range(4):
-        #                 tb_logger.add_histogram(
-        #                     tag=name + '_data{},{}'.format(i, j),
-        #                     values=param.data[:, i * 64 + j * 16:i * 64 + (j + 1) * 16, :, :],
-        #                     global_step=1)
+        if DEBUG:
+            # for name, param in self.named_parameters():
+            #     if name == 'dc.0.weight':
+            #         for i in range(6):
+            #             for j in range(4):
+            #                 tb_logger.add_histogram(
+            #                     tag=name + '_data{},{}'.format(i, j),
+            #                     values=param.data[:, i * 64 + j * 16:i * 64 + (j + 1) * 16, :, :],
+            #                     global_step=1)
+            for name, param in self.named_parameters():
+                if name == 'dc.weight':
+                    for i in range(4):
+                        tb_logger.add_histogram(
+                            tag=name + '_data{}'.format(i),
+                            values=param.data[:, i * 128:(i + 1) * 128, :, :],
+                            global_step=1)
 
         return output

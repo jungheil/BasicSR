@@ -22,7 +22,7 @@ datasets:
       # (for lmdb)
       # type: lmdb
 
-    gt_size: 64
+    gt_size: 80
     use_hflip: true
     use_rot: true
 
@@ -51,7 +51,7 @@ network_g:
   num_block: 4
   k_size: '333333'
   conv_type: 'NNNNNN'
-  al: '0B'
+  al: '0C'
   att_res: False
   bone_tail: False
   num_feat: 64
@@ -86,7 +86,7 @@ train:
     type: L1Loss
     loss_weight: 1.0
     reduction: mean
-    crop_bd: 4
+    crop_bd: 6
 
 # validation settings
 val:
@@ -96,7 +96,7 @@ val:
   metrics:
     psnr: # metric name, can be arbitrary
       type: calculate_psnr
-      crop_border: 4
+      crop_border: 6
       test_y_channel: true
 
 # logging settings
