@@ -10,7 +10,7 @@ from basicsr.utils.registry import ARCH_REGISTRY
 torch.backends.cudnn.benchmark = True
 
 global DEBUG
-DEBUG = True
+DEBUG = False
 
 if DEBUG:
     from torch.utils.tensorboard import SummaryWriter
@@ -155,21 +155,57 @@ def sequential(*args):
 
 class SELayer(nn.Module):
 
-    def __init__(self, channel, reduction=16):
+    def __init__(self, channel, reduction=16, nl='S', ismax=True):
         super(SELayer, self).__init__()
+        self.nlt = nl
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.max_pool = nn.AdaptiveMaxPool2d(1)
 
         self.fc = nn.Sequential(
             nn.Linear(channel, channel // reduction, bias=False), nn.ReLU(inplace=True),
-            nn.Linear(channel // reduction, channel, bias=False), nn.Sigmoid())
+            nn.Linear(channel // reduction, channel, bias=False))
+        if nl == 'S':
+            self.nl = nn.Sigmoid()
+        elif nl == 'T':
+            self.nl = nn.Tanh()
+        else:
+            raise ('nl?')
+        self.ismax = ismax
 
     def forward(self, x):
         b, c, _, _ = x.size()
-        y = self.avg_pool(x) + self.max_pool(x)
-        y = y.view(b, c)
-        y = self.fc(y).view(b, c, 1, 1)
-        return x * y.expand_as(x)
+        avg = self.avg_pool(x).view(b, c)
+        if self.ismax:
+            m = self.max_pool(x).view(b, c)
+            y = (self.fc(avg) + self.fc(m)).view(b, c, 1, 1)
+        else:
+            y = self.fc(avg).view(b, c, 1, 1)
+        y = self.nl(y)
+        if self.nlt == 'S' or self.nlt == 'M':
+            return x * y.expand_as(x)
+        elif self.nlt == 'T':
+            return x * (y.expand_as(x) + 1)
+        else:
+            raise ('nl?')
+
+
+# class SELayer(nn.Module):
+
+#     def __init__(self, channel, reduction=16, nl=None, ismax=None):
+#         super(SELayer, self).__init__()
+#         self.avg_pool = nn.AdaptiveAvgPool2d(1)
+#         self.max_pool = nn.AdaptiveMaxPool2d(1)
+
+#         self.fc = nn.Sequential(
+#             nn.Linear(channel, channel // reduction, bias=False), nn.ReLU(inplace=True),
+#             nn.Linear(channel // reduction, channel, bias=False), nn.Sigmoid())
+
+#     def forward(self, x):
+#         b, c, _, _ = x.size()
+#         y = self.avg_pool(x) + self.max_pool(x)
+#         y = y.view(b, c)
+#         y = self.fc(y).view(b, c, 1, 1)
+#         return x * y.expand_as(x)
 
 
 class _NonLocalBlockND(nn.Module):
@@ -382,8 +418,8 @@ class CBAM(nn.Module):
         spat_att = self.spatial_attention(fp)
         # print(spat_att.size())
         fpp = spat_att * fp
-        # v = utils.make_grid(spat_att.transpose(1, 0), 8, normalize=True, scale_each=True, value_range=(0, 1))
-        # utils.save_image(v, 'A{}.png'.format(self.i))
+        v = utils.make_grid(spat_att.transpose(1, 0), 8, normalize=True, scale_each=True, value_range=(0, 1))
+        utils.save_image(v, 'A{}.png'.format(self.i))
         # print(fpp.size())
         return fpp
 
@@ -525,7 +561,11 @@ def ALayer(type, channel, i=0):
     elif type == 'N':
         return NONLocalBlock2D(channel)
     elif type == 'S':
-        return SELayer(channel)
+        return SELayer(channel, 16, 'S', False)
+    elif type == 'M':
+        return SELayer(channel, 16, 'S')
+    elif type == 'T':
+        return SELayer(channel, 16, 'T')
     else:
         raise RuntimeError('alayer type?')
 
@@ -553,6 +593,11 @@ class Block(nn.Module):
             self.body = nn.Sequential(
                 nn.Conv2d(num_feat, num_feat, k_size, 1, padding, dilation, padding_mode='replicate'),
                 nn.LeakyReLU(negative_slope=0.05, inplace=True),
+            )
+        elif conv == 'S':
+            self.body = nn.Sequential(
+                nn.Conv2d(num_feat, num_feat, k_size, 1, padding, dilation, padding_mode='replicate'),
+                nn.SiLU()
             )
         elif conv == 'T':
             self.body = nn.Sequential(
@@ -667,6 +712,7 @@ class TZ(nn.Module):
             tail_f = num_dtl_c * num_block * num_modules + num_feat
         else:
             tail_f = num_dtl_c * num_block * num_modules
+        tail_f = nf * num_modules
         # TODO zuowanshiyanhou,kaolv 3*3, tongdaoxiaojianbuyaoyong relu
         self.dc = nn.Conv2d(tail_f, nf, 1, 1, 0, padding_mode='replicate')
 
@@ -703,12 +749,12 @@ class TZ(nn.Module):
         if self.bone_tail:
             dtl.append(out)
 
-        # if DEBUG:
-        #     for i, v in enumerate(V):
-        #         # utils.save_image(v, '{}.png'.format(i))
-        #         # utils.save_image(Vd[i], 'd{}.png'.format(i))
-        #         tb_logger.add_image('out{}'.format(i), v, 0)
-        #         tb_logger.add_image('d{}'.format(i), Vd[i], 0)
+        if DEBUG:
+            for i, v in enumerate(V):
+                utils.save_image(v, '{}.png'.format(i))
+                utils.save_image(Vd[i], 'd{}.png'.format(i))
+                # tb_logger.add_image('out{}'.format(i), v, 0)
+                # tb_logger.add_image('d{}'.format(i), Vd[i], 0)
 
         out = self.dc(torch.cat(dtl, dim=1))
         out_lr = self.fuse(out) + x
@@ -727,10 +773,10 @@ class TZ(nn.Module):
             #                     global_step=1)
             for name, param in self.named_parameters():
                 if name == 'dc.weight':
-                    for i in range(4):
+                    for i in range(6):
                         tb_logger.add_histogram(
                             tag=name + '_data{}'.format(i),
-                            values=param.data[:, i * 128:(i + 1) * 128, :, :],
+                            values=param.data[:, i * 64:(i + 1) * 64, :, :],
                             global_step=1)
 
         return output
