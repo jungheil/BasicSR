@@ -1,29 +1,35 @@
+# TODO
 # general settings
-name: 104_SWINIR_X2_UW_5886
-model_type: SwinIRModel
-scale: 2
-num_gpu: auto
-manual_seed: 0
+name: 108_MemNet_X4_UW_5886
+model_type: SRModel
+scale: 1
+num_gpu: 1  # set num_gpu: 0 for cpu mode
+manual_seed: 5886
 
 # dataset and data loader settings
 datasets:
   train:
     name: UW
     type: PairedImageDataset
-    dataroot_gt: /content/datasets/UW/x2/hr
-    dataroot_lq: /content/datasets/UW/x2/lr_2x
+    dataroot_gt: /content/datasets/UW/x4/hr
+    dataroot_lq: /content/datasets/UW/x4/lr_4x_l
+    # (for lmdb)
+    # dataroot_gt: datasets/DIV2K/DIV2K_train_HR_sub.lmdb
+    # dataroot_lq: datasets/DIV2K/DIV2K_train_LR_bicubic_X2_sub.lmdb
     filename_tmpl: '{}'
     io_backend:
       type: disk
+      # (for lmdb)
+      # type: lmdb
 
-    gt_size: 96
+    gt_size: 31
     use_hflip: true
     use_rot: true
 
     # data loader
     use_shuffle: true
     num_worker_per_gpu: 6
-    batch_size_per_gpu: 4
+    batch_size_per_gpu: 64
     dataset_enlarge_ratio: 10
     prefetch_mode: ~
 
@@ -31,29 +37,20 @@ datasets:
     name: USR248_VAL
     type: PairedImageDataset
     dataroot_gt: /content/datasets/benchmark/USR248_VAL/HR
-    dataroot_lq: /content/datasets/benchmark/USR248_VAL/LR_bicubic/X2
+    dataroot_lq: /content/datasets/benchmark/USR248_VAL/LR_bicubicL/X4
     io_backend:
       type: disk
 
 # network structures
 network_g:
-  type: SwinIR
-  upscale: 2
-  in_chans: 3
-  img_size: 48
-  window_size: 8
-  img_range: 1.
-  depths: [6, 6, 6, 6, 6, 6]
-  embed_dim: 180
-  num_heads: [6, 6, 6, 6, 6, 6]
-  mlp_ratio: 2
-  upsampler: 'pixelshuffle'
-  resi_connection: '1conv'
+  type: MemNet
+
 
 # path
 path:
   pretrain_network_g: ~
   strict_load_g: true
+  # resume_state: experiments/010_RCAN_X2_UW_5886/training_states/80000.state
   resume_state: ~
 
 # training settings
@@ -61,17 +58,17 @@ train:
   ema_decay: 0.999
   optim_g:
     type: Adam
-    lr: !!float 2e-4
-    weight_decay: 0
-    betas: [0.9, 0.99]
+    lr: !!float 1e-1
+    weight_decay: 0.0001
+    betas: [0.9, 0.999]
 
   scheduler:
     type: MultiStepLR
-    milestones: [250000, 400000, 450000, 475000]
-    gamma: 0.5
+    milestones: [100000, 200000, 300000, 400000]
+    gamma: 0.1
 
   total_iter: 500000
-  warmup_iter: -1  # no warm up
+  warmup_iter: -1 # no warm up
 
   # losses
   pixel_opt:
@@ -94,7 +91,7 @@ val:
 logger:
   print_freq: 100
   save_checkpoint_freq: !!float 2e3
-  use_tb_logger: false
+  use_tb_logger: true
   wandb:
     project: ~
     resume_id: ~

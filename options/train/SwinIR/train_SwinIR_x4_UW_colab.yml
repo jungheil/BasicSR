@@ -1,7 +1,7 @@
 # general settings
-name: 104_SWINIR_X2_UW_5886
+name: 104_SWINIR_X4_UW_5886
 model_type: SwinIRModel
-scale: 2
+scale: 4
 num_gpu: auto
 manual_seed: 0
 
@@ -10,13 +10,13 @@ datasets:
   train:
     name: UW
     type: PairedImageDataset
-    dataroot_gt: /content/datasets/UW/x2/hr
-    dataroot_lq: /content/datasets/UW/x2/lr_2x
+    dataroot_gt: /content/datasets/UW/x4/hr
+    dataroot_lq: /content/datasets/UW/x4/lr_4x
     filename_tmpl: '{}'
     io_backend:
       type: disk
 
-    gt_size: 96
+    gt_size: 192
     use_hflip: true
     use_rot: true
 
@@ -31,14 +31,14 @@ datasets:
     name: USR248_VAL
     type: PairedImageDataset
     dataroot_gt: /content/datasets/benchmark/USR248_VAL/HR
-    dataroot_lq: /content/datasets/benchmark/USR248_VAL/LR_bicubic/X2
+    dataroot_lq: /content/datasets/benchmark/USR248_VAL/LR_bicubic/X4
     io_backend:
       type: disk
 
 # network structures
 network_g:
   type: SwinIR
-  upscale: 2
+  upscale: 4
   in_chans: 3
   img_size: 48
   window_size: 8
