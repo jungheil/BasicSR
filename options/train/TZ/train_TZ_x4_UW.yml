@@ -1,8 +1,8 @@
 # TODO
 # general settings
-name: 901_TZ_X2_UW_Dup
+name: 901_TZ_X4_UW_5886_CC_res
 model_type: SRModel
-scale: 2
+scale: 4
 num_gpu: 1  # set num_gpu: 0 for cpu mode
 manual_seed: 5886
 
@@ -11,8 +11,8 @@ datasets:
   train:
     name: UW
     type: PairedImageDataset
-    dataroot_gt: datasets/UW/x2/hr
-    dataroot_lq: datasets/UW/x2/lr_2x
+    dataroot_gt: datasets/UW/x4/hr
+    dataroot_lq: datasets/UW/x4/lr_4x
     # (for lmdb)
     # dataroot_gt: datasets/DIV2K/DIV2K_train_HR_sub.lmdb
     # dataroot_lq: datasets/DIV2K/DIV2K_train_LR_bicubic_X2_sub.lmdb
@@ -22,7 +22,7 @@ datasets:
       # (for lmdb)
       # type: lmdb
 
-    gt_size: 80
+    gt_size: 64
     use_hflip: true
     use_rot: true
 
@@ -37,7 +37,7 @@ datasets:
     name: USR248_VAL
     type: PairedImageDataset
     dataroot_gt: datasets/benchmark/USR248_VAL/HR
-    dataroot_lq: datasets/benchmark/USR248_VAL/LR_bicubic/X2
+    dataroot_lq: datasets/benchmark/USR248_VAL/LR_bicubic/X4
     io_backend:
       type: disk
 
@@ -51,17 +51,16 @@ network_g:
   num_block: 4
   k_size: '333333'
   conv_type: 'NNNNNN'
-  al: '0M'
-  att_res: False
+  al: 'CC'
+  att_res: True
   bone_tail: False
   num_feat: 64
-  upscale: 2
+  upscale: 4
 
 # path
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  # resume_state: experiments/201_TL_X2_UW_5886/training_states/94000.state
   resume_state: ~
 
 # training settings
@@ -69,7 +68,7 @@ train:
   ema_decay: 0.999
   optim_g:
     type: Adam
-    lr: !!float 2e-4
+    lr: !!float 1e-4
     weight_decay: 0
     betas: [0.9, 0.999]
 
@@ -86,7 +85,6 @@ train:
     type: L1Loss
     loss_weight: 1.0
     reduction: mean
-    crop_bd: 6
 
 # validation settings
 val:
@@ -96,7 +94,7 @@ val:
   metrics:
     psnr: # metric name, can be arbitrary
       type: calculate_psnr
-      crop_border: 2
+      crop_border: 4
       test_y_channel: true
 
 # logging settings

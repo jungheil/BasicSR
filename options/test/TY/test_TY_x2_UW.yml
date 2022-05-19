@@ -1,4 +1,4 @@
-name: TLT_X2_UW_TEST
+name: TY_X2_UW_TEST
 suffix: ~  # add suffix to saved images
 model_type: SRModel
 scale: 2
@@ -30,18 +30,46 @@ datasets:
     io_backend:
       type: disk
 
+  test_4:
+    name: GBR100_s
+    type: PairedImageDataset
+    dataroot_gt: datasets/benchmark/GBR100_s/HR
+    dataroot_lq: datasets/benchmark/GBR100_s/LR_bicubic/X2
+    io_backend:
+      type: disk
+
+  test_5:
+    name: Set5
+    type: PairedImageDataset
+    dataroot_gt: datasets/benchmark/Set5/HR
+    dataroot_lq: datasets/benchmark/Set5/LR_bicubic/X2
+    io_backend:
+      type: disk
+
+  test_6:
+    name: Set14
+    type: PairedImageDataset
+    dataroot_gt: datasets/benchmark/Set14/HR
+    dataroot_lq: datasets/benchmark/Set14/LR_bicubic/X2
+    io_backend:
+      type: disk
+
 # network structures
 network_g:
-  type: TLT
+  type: TY
   num_in_ch: 3
   num_out_ch: 3
-  num_modules: 6
   num_feat: 64
+  num_sp_feat: 16
+  num_modules: 8
+  num_block: 6
   upscale: 2
+  img_range: 255.0
+  rgb_mean: [0.33024667, 0.41541553, 0.42345934]
 
 # path
 path:
-  pretrain_network_g: experiments/models/net_g_456000.pth
+  pretrain_network_g: experiments/models/FRSN_X2_UW.pth
   strict_load_g: true
 
 # validation settings

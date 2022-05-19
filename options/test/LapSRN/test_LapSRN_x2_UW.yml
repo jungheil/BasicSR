@@ -1,4 +1,4 @@
-name: 103_EDSR_X2_UW_TEST
+name: 106_LapSRN_X2_UW_TEST
 suffix: ~  # add suffix to saved images
 model_type: SRModel
 scale: 2
@@ -12,6 +12,7 @@ datasets:
     type: PairedImageDataset
     dataroot_gt: datasets/benchmark/USR248_VAL/HR
     dataroot_lq: datasets/benchmark/USR248_VAL/LR_bicubic/X2
+    color: y
     io_backend:
       type: disk
   test_2:  # the 2nd test dataset
@@ -19,6 +20,7 @@ datasets:
     type: PairedImageDataset
     dataroot_gt: datasets/benchmark/USR248/HR
     dataroot_lq: datasets/benchmark/USR248/LR_bicubic/X2
+    color: y
     io_backend:
       type: disk
   test_3:
@@ -26,6 +28,7 @@ datasets:
     type: PairedImageDataset
     dataroot_gt: datasets/benchmark/UFO120/HR
     dataroot_lq: datasets/benchmark/UFO120/LR_bicubic/X2
+    color: y
     io_backend:
       type: disk
   test_4:
@@ -33,6 +36,7 @@ datasets:
     type: PairedImageDataset
     dataroot_gt: datasets/benchmark/GBR100/HR
     dataroot_lq: datasets/benchmark/GBR100/LR_bicubic/X2
+    color: y
     io_backend:
       type: disk
   test_5:
@@ -40,6 +44,7 @@ datasets:
     type: PairedImageDataset
     dataroot_gt: datasets/benchmark/Set5/HR
     dataroot_lq: datasets/benchmark/Set5/LR_bicubic/X2
+    color: y
     io_backend:
       type: disk
   test_6:
@@ -47,24 +52,18 @@ datasets:
     type: PairedImageDataset
     dataroot_gt: datasets/benchmark/Set14/HR
     dataroot_lq: datasets/benchmark/Set14/LR_bicubic/X2
+    color: y
     io_backend:
       type: disk
 
 # network structures
 network_g:
-  type: EDSR
-  num_in_ch: 3
-  num_out_ch: 3
-  num_feat: 256
-  num_block: 32
+  type: LapSRN
   upscale: 2
-  res_scale: 0.1
-  img_range: 255.
-  rgb_mean: [0.33024667, 0.41541553, 0.42345934]
 
 # path
 path:
-  pretrain_network_g: experiments/models/EDSR_X2_UW.pth
+  pretrain_network_g: experiments/models/LapSRN_X2_UW.pth
   strict_load_g: true
 
 # validation settings

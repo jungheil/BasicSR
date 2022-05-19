@@ -1,4 +1,4 @@
-name: 103_EDSR_X2_UW_TEST
+name: TZ_X2_UW_TEST_BB
 suffix: ~  # add suffix to saved images
 model_type: SRModel
 scale: 2
@@ -52,19 +52,23 @@ datasets:
 
 # network structures
 network_g:
-  type: EDSR
+  type: TZ
   num_in_ch: 3
   num_out_ch: 3
-  num_feat: 256
-  num_block: 32
+  num_dtl_c: 16
+  num_modules: 6
+  num_block: 4
+  k_size: '333333'
+  conv_type: 'NNNNNN'
+  al: 'BB'
+  att_res: False
+  bone_tail: False
+  num_feat: 64
   upscale: 2
-  res_scale: 0.1
-  img_range: 255.
-  rgb_mean: [0.33024667, 0.41541553, 0.42345934]
 
 # path
 path:
-  pretrain_network_g: experiments/models/EDSR_X2_UW.pth
+  pretrain_network_g: experiments/models/TZ_X2_UW_BB.pth
   strict_load_g: true
 
 # validation settings

@@ -1,6 +1,6 @@
 # TODO
 # general settings
-name: 901_TZ_X2_UW_Dup
+name: 901_TZ_X2_UW_0C_S
 model_type: SRModel
 scale: 2
 num_gpu: 1  # set num_gpu: 0 for cpu mode
@@ -22,7 +22,7 @@ datasets:
       # (for lmdb)
       # type: lmdb
 
-    gt_size: 80
+    gt_size: 64
     use_hflip: true
     use_rot: true
 
@@ -46,22 +46,21 @@ network_g:
   type: TZ
   num_in_ch: 3
   num_out_ch: 3
-  num_dtl_c: 16
-  num_modules: 6
+  num_dtl_c: 32
+  num_modules: 4
   num_block: 4
-  k_size: '333333'
-  conv_type: 'NNNNNN'
-  al: '0M'
+  k_size: '3377'
+  conv_type: 'NNTT'
+  al: '0C'
   att_res: False
   bone_tail: False
-  num_feat: 64
+  num_feat: 128
   upscale: 2
 
 # path
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  # resume_state: experiments/201_TL_X2_UW_5886/training_states/94000.state
   resume_state: ~
 
 # training settings
@@ -69,7 +68,7 @@ train:
   ema_decay: 0.999
   optim_g:
     type: Adam
-    lr: !!float 2e-4
+    lr: !!float 1e-4
     weight_decay: 0
     betas: [0.9, 0.999]
 
@@ -85,8 +84,10 @@ train:
   pixel_opt:
     type: L1Loss
     loss_weight: 1.0
+    crop_bd: 4
     reduction: mean
-    crop_bd: 6
+    
+
 
 # validation settings
 val:
@@ -96,7 +97,7 @@ val:
   metrics:
     psnr: # metric name, can be arbitrary
       type: calculate_psnr
-      crop_border: 2
+      crop_border: 4
       test_y_channel: true
 
 # logging settings

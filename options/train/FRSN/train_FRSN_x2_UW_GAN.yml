@@ -1,7 +1,7 @@
 # TODO
 # general settings
-name: 901_TZ_X2_UW_Dup
-model_type: SRModel
+name: 886_FRSN_X2_UW_GAN
+model_type: ESRGANModel
 scale: 2
 num_gpu: 1  # set num_gpu: 0 for cpu mode
 manual_seed: 5886
@@ -13,16 +13,11 @@ datasets:
     type: PairedImageDataset
     dataroot_gt: datasets/UW/x2/hr
     dataroot_lq: datasets/UW/x2/lr_2x
-    # (for lmdb)
-    # dataroot_gt: datasets/DIV2K/DIV2K_train_HR_sub.lmdb
-    # dataroot_lq: datasets/DIV2K/DIV2K_train_LR_bicubic_X2_sub.lmdb
     filename_tmpl: '{}'
     io_backend:
       type: disk
-      # (for lmdb)
-      # type: lmdb
 
-    gt_size: 80
+    gt_size: 64
     use_hflip: true
     use_rot: true
 
@@ -43,25 +38,29 @@ datasets:
 
 # network structures
 network_g:
-  type: TZ
+  type: FRSN
   num_in_ch: 3
   num_out_ch: 3
-  num_dtl_c: 16
-  num_modules: 6
-  num_block: 4
-  k_size: '333333'
-  conv_type: 'NNNNNN'
-  al: '0M'
-  att_res: False
-  bone_tail: False
   num_feat: 64
+  num_sp_feat: 16
+  num_modules: 8
+  num_block: 6
+  k_size: 7
   upscale: 2
+  img_range: 255.0
+  rgb_mean: [0.33024667, 0.41541553, 0.42345934]
+
+network_d:
+  type: UNetDiscriminatorSN
+  num_in_ch: 3
+  num_feat: 64
+  skip_connection: True
+
 
 # path
 path:
-  pretrain_network_g: ~
+  pretrain_network_g: experiments/models/FRSN_X2_UW.pth
   strict_load_g: true
-  # resume_state: experiments/201_TL_X2_UW_5886/training_states/94000.state
   resume_state: ~
 
 # training settings
@@ -69,13 +68,18 @@ train:
   ema_decay: 0.999
   optim_g:
     type: Adam
-    lr: !!float 2e-4
+    lr: !!float 1e-4
+    weight_decay: 0
+    betas: [0.99, 0.999]
+  optim_d:
+    type: Adam
+    lr: !!float 1e-4
     weight_decay: 0
     betas: [0.9, 0.999]
 
   scheduler:
     type: MultiStepLR
-    milestones: [200000, 350000, 450000, 475000]
+    milestones: [50000, 100000, 200000, 300000, 400000]
     gamma: 0.5
 
   total_iter: 500000
@@ -86,7 +90,31 @@ train:
     type: L1Loss
     loss_weight: 1.0
     reduction: mean
-    crop_bd: 6
+    crop_bd: 4
+  perceptual_opt:
+    type: PerceptualLoss
+    layer_weights:
+      # before relu
+      'conv1_2': 0.1
+      'conv2_2': 0.1
+      'conv3_4': 1
+      'conv4_4': 1
+      'conv5_4': 1
+    vgg_type: vgg19
+    use_input_norm: true
+    perceptual_weight: !!float 1.0
+    style_weight: 0
+    range_norm: false
+    criterion: l1
+  gan_opt:
+    type: GANLoss
+    gan_type: vanilla
+    real_label_val: 1.0
+    fake_label_val: 0.0
+    loss_weight: !!float 5e-3
+
+  net_d_iters: 1
+  net_d_init_iters: 0
 
 # validation settings
 val:

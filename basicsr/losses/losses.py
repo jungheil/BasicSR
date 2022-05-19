@@ -7,7 +7,7 @@ from torch.nn import functional as F
 from basicsr.archs.vgg_arch import VGGFeatureExtractor
 from basicsr.utils.registry import LOSS_REGISTRY
 from .loss_util import weighted_loss
-from utils.img_util import crop_border
+# from utils.img_util import crop_border
 
 _reduction_modes = ['none', 'mean', 'sum']
 

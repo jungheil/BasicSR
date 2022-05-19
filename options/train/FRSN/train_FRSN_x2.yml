@@ -1,28 +1,22 @@
-# TODO
 # general settings
-name: 901_TZ_X2_UW_Dup
+name: 886_FRSN_X2
 model_type: SRModel
 scale: 2
-num_gpu: 1  # set num_gpu: 0 for cpu mode
+num_gpu: 1 # set num_gpu: 0 for cpu mode
 manual_seed: 5886
 
 # dataset and data loader settings
 datasets:
   train:
-    name: UW
+    name: Flickr2K
     type: PairedImageDataset
-    dataroot_gt: datasets/UW/x2/hr
-    dataroot_lq: datasets/UW/x2/lr_2x
-    # (for lmdb)
-    # dataroot_gt: datasets/DIV2K/DIV2K_train_HR_sub.lmdb
-    # dataroot_lq: datasets/DIV2K/DIV2K_train_LR_bicubic_X2_sub.lmdb
-    filename_tmpl: '{}'
+    dataroot_gt: datasets/Flickr2K/Flickr2K_HR
+    dataroot_lq: datasets/Flickr2K/Flickr2K_LR_bicubic/X2
+    filename_tmpl: "{}"
     io_backend:
       type: disk
-      # (for lmdb)
-      # type: lmdb
 
-    gt_size: 80
+    gt_size: 64
     use_hflip: true
     use_rot: true
 
@@ -34,34 +28,31 @@ datasets:
     prefetch_mode: ~
 
   val:
-    name: USR248_VAL
+    name: DIV2K_VAL_s
     type: PairedImageDataset
-    dataroot_gt: datasets/benchmark/USR248_VAL/HR
-    dataroot_lq: datasets/benchmark/USR248_VAL/LR_bicubic/X2
+    dataroot_gt: datasets/benchmark/DIV2K_VAL_s/HR
+    dataroot_lq: datasets/benchmark/DIV2K_VAL_s/LR_bicubic/X2
     io_backend:
       type: disk
 
 # network structures
 network_g:
-  type: TZ
+  type: FRSN
   num_in_ch: 3
   num_out_ch: 3
-  num_dtl_c: 16
-  num_modules: 6
-  num_block: 4
-  k_size: '333333'
-  conv_type: 'NNNNNN'
-  al: '0M'
-  att_res: False
-  bone_tail: False
   num_feat: 64
+  num_sp_feat: 16
+  num_modules: 8
+  num_block: 6
+  k_size: 7
   upscale: 2
+  img_range: 255.0
+  rgb_mean: [0.4488, 0.4371, 0.4040]
 
 # path
 path:
   pretrain_network_g: ~
   strict_load_g: true
-  # resume_state: experiments/201_TL_X2_UW_5886/training_states/94000.state
   resume_state: ~
 
 # training settings
@@ -69,16 +60,24 @@ train:
   ema_decay: 0.999
   optim_g:
     type: Adam
-    lr: !!float 2e-4
+    lr: !!float 3e-4
     weight_decay: 0
-    betas: [0.9, 0.999]
+    betas: [0.99, 0.999]
 
   scheduler:
     type: MultiStepLR
-    milestones: [200000, 350000, 450000, 475000]
+    milestones:
+      [
+        150000,
+        300000,
+        450000,
+        600000,
+        750000,
+        900000,
+      ]
     gamma: 0.5
 
-  total_iter: 500000
+  total_iter: 1050000
   warmup_iter: -1 # no warm up
 
   # losses
@@ -86,11 +85,11 @@ train:
     type: L1Loss
     loss_weight: 1.0
     reduction: mean
-    crop_bd: 6
+    crop_bd: 4
 
 # validation settings
 val:
-  val_freq: !!float 2e3
+  val_freq: !!float 5e3
   save_img: true
 
   metrics:
@@ -102,7 +101,7 @@ val:
 # logging settings
 logger:
   print_freq: 100
-  save_checkpoint_freq: !!float 2e3
+  save_checkpoint_freq: !!float 5e3
   use_tb_logger: true
   wandb:
     project: ~
