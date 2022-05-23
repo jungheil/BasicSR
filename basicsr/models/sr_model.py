@@ -10,6 +10,12 @@ from basicsr.utils import get_root_logger, imwrite, tensor2img
 from basicsr.utils.registry import MODEL_REGISTRY
 from .base_model import BaseModel
 
+def add_clear(fun):
+    def warp(*args, **kwargs):
+        ret = fun(*args, **kwargs)
+        torch.cuda.empty_cache()
+        return ret
+    return warp
 
 @MODEL_REGISTRY.register()
 class SRModel(BaseModel):
@@ -120,7 +126,58 @@ class SRModel(BaseModel):
         if self.ema_decay > 0:
             self.model_ema(decay=self.ema_decay)
 
-    def test(self, current_iter=0):
+    def forward_x8(self, *args, forward_function=None):
+
+        def _transform(v, op):
+            v = v.float()
+
+            v2np = v.data.cpu().numpy()
+            if op == 'v':
+                tfnp = v2np[:, :, :, ::-1].copy()
+            elif op == 'h':
+                tfnp = v2np[:, :, ::-1, :].copy()
+            elif op == 't':
+                tfnp = v2np.transpose((0, 1, 3, 2)).copy()
+
+            ret = torch.Tensor(tfnp).to(self.device)
+
+            return ret
+
+        list_x = []
+        for a in args:
+            x = [a]
+            for tf in 'v', 'h', 't':
+                x.extend([_transform(_x, tf) for _x in x])
+
+            list_x.append(x)
+
+        list_y = []
+        for x in zip(*list_x):
+            y = forward_function(*x)
+            if not isinstance(y, list):
+                y = [y]
+            if not list_y:
+                list_y = [[_y] for _y in y]
+            else:
+                for _list_y, _y in zip(list_y, y):
+                    _list_y.append(_y)
+
+        for _list_y in list_y:
+            for i in range(len(_list_y)):
+                if i > 3:
+                    _list_y[i] = _transform(_list_y[i], 't')
+                if i % 4 > 1:
+                    _list_y[i] = _transform(_list_y[i], 'h')
+                if (i % 4) % 2 == 1:
+                    _list_y[i] = _transform(_list_y[i], 'v')
+
+        y = [torch.cat(_y, dim=0).mean(dim=0, keepdim=True) for _y in list_y]
+        if len(y) == 1:
+            y = y[0]
+
+        return y
+
+    def test(self, current_iter=0, ensemble=False):
         if hasattr(self, 'net_g_ema'):
             self.net_g_ema.eval()
             with torch.no_grad():
@@ -128,15 +185,18 @@ class SRModel(BaseModel):
         else:
             self.net_g.eval()
             with torch.no_grad():
-                self.output = self.net_g(self.lq)
+                if ensemble:
+                    self.output = self.forward_x8(self.lq, forward_function=add_clear(self.net_g.forward))
+                else:
+                    self.output = self.net_g(self.lq)
             self.net_g.train()
 
 
-    def dist_validation(self, dataloader, current_iter, tb_logger, save_img):
+    def dist_validation(self, dataloader, current_iter, tb_logger, save_img, ensemble=False):
         if self.opt['rank'] == 0:
-            self.nondist_validation(dataloader, current_iter, tb_logger, save_img)
+            self.nondist_validation(dataloader, current_iter, tb_logger, save_img, ensemble)
 
-    def nondist_validation(self, dataloader, current_iter, tb_logger, save_img):
+    def nondist_validation(self, dataloader, current_iter, tb_logger, save_img, ensemble=False):
         dataset_name = dataloader.dataset.opt['name']
         with_metrics = self.opt['val'].get('metrics') is not None
         use_pbar = self.opt['val'].get('pbar', False)
@@ -158,7 +218,7 @@ class SRModel(BaseModel):
             img_name = osp.splitext(osp.basename(val_data['lq_path'][0]))[0]
 
             self.feed_data(val_data)
-            self.test(current_iter)
+            self.test(current_iter, ensemble)
 
             visuals = self.get_current_visuals()
             sr_img = tensor2img([visuals['result']])

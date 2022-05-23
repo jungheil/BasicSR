@@ -1,4 +1,4 @@
-name: FRSN_X2_UW_TEST
+name: FRSN_X2_UW_TEST_ENS
 suffix: ~  # add suffix to saved images
 model_type: SRModel
 scale: 2
@@ -77,6 +77,7 @@ path:
 val:
   save_img: true
   suffix: ~  # add suffix to saved images, if None, use exp name
+  ensemble: true
 
   metrics:
     psnr: # metric name, can be arbitrary

@@ -8,8 +8,8 @@ from torch.nn.parallel import DataParallel, DistributedDataParallel
 from basicsr.models import lr_scheduler as lr_scheduler
 from basicsr.utils import get_root_logger
 from basicsr.utils.dist_util import master_only
-# from ptflops import get_model_complexity_info
-# from thop import profile
+from ptflops import get_model_complexity_info
+from thop import profile
 
 
 
@@ -36,7 +36,7 @@ class BaseModel():
         """Save networks and training state."""
         pass
 
-    def validation(self, dataloader, current_iter, tb_logger, save_img=False):
+    def validation(self, dataloader, current_iter, tb_logger, save_img=False, ensemble=False):
         """Validation function.
 
         Args:
@@ -46,9 +46,9 @@ class BaseModel():
             save_img (bool): Whether to save images. Default: False.
         """
         if self.opt['dist']:
-            self.dist_validation(dataloader, current_iter, tb_logger, save_img)
+            self.dist_validation(dataloader, current_iter, tb_logger, save_img, ensemble)
         else:
-            self.nondist_validation(dataloader, current_iter, tb_logger, save_img)
+            self.nondist_validation(dataloader, current_iter, tb_logger, save_img, ensemble)
 
     def _initialize_best_metric_results(self, dataset_name):
         """Initialize the best metric results dict for recording the best metric value and iteration."""
@@ -147,10 +147,10 @@ class BaseModel():
         net_str = str(net)
         net_params = sum(map(lambda x: x.numel(), net.parameters()))
         # macs, params = get_model_complexity_info(
-        #     net, (1, 224, 224), as_strings=True, print_per_layer_stat=True, verbose=True)
+        #     net, (3, 224, 224), as_strings=True, print_per_layer_stat=True, verbose=True)
         # input = torch.randn(1, 3, 224, 224).to(self.device)
         # macs, params = profile(net, inputs=(input, ))
-
+        # print(111111111111111,macs, params)
 
 
         logger = get_root_logger()

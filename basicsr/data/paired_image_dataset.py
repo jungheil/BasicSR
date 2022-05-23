@@ -93,8 +93,8 @@ class PairedImageDataset(data.Dataset):
         lq_path = self.paths[index]['lq_path']
         img_bytes = self.file_client.get(lq_path, 'lq')
         img_lq = imfrombytes(img_bytes, float32=True)
-        img_gt = modcrop(img_gt, 8*scale)
-        img_lq = modcrop(img_lq, 8)
+        # img_gt = modcrop(img_gt, 8*scale)
+        # img_lq = modcrop(img_lq, 8)
 
         # augmentation for training
         if self.opt['phase'] == 'train':
